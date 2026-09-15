@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  Suspense,
   useEffect,
   useMemo,
   useState,
@@ -15,17 +16,11 @@ import {
   useSearchParams,
 } from "next/navigation";
 
-import type {
-  User,
-} from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 
-import {
-  supabase,
-} from "@/app/lib/supabase";
+import { supabase } from "@/app/lib/supabase";
 
-import {
-  getUserDisplayName,
-} from "@/app/lib/auth";
+import { getUserDisplayName } from "@/app/lib/auth";
 
 type Housing = {
   id: string;
@@ -37,15 +32,9 @@ type Housing = {
   image: string;
 };
 
-function resolveImageSrc(
-  housing: Housing
-) {
-  if (
-    housing.image
-  ) {
-    return housing.image.startsWith(
-      "/"
-    )
+function resolveImageSrc(housing: Housing) {
+  if (housing.image) {
+    return housing.image.startsWith("/")
       ? housing.image
       : `/${housing.image}`;
   }
@@ -53,150 +42,87 @@ function resolveImageSrc(
   return "/UTA-Logo.png";
 }
 
-export default function WriteReviewPage() {
-  const router =
-    useRouter();
+// =====================================================
+// PAGE
+// =====================================================
 
-  const searchParams =
-    useSearchParams();
+export default function WriteReviewPage() {
+  return (
+    <Suspense fallback={<WriteReviewLoading />}>
+      <WriteReviewContent />
+    </Suspense>
+  );
+}
+
+// =====================================================
+// WRITE REVIEW CONTENT
+// =====================================================
+
+function WriteReviewContent() {
+  const router = useRouter();
+
+  const searchParams = useSearchParams();
 
   const initialSlug =
-    searchParams.get(
-      "housing"
-    ) ??
-    searchParams.get(
-      "id"
-    ) ??
+    searchParams.get("housing") ??
+    searchParams.get("id") ??
     "";
 
-  const [
-    user,
-    setUser,
-  ] =
-    useState<User | null>(
-      null
-    );
+  const [user, setUser] = useState<User | null>(null);
 
-  const [
-    authLoading,
-    setAuthLoading,
-  ] =
-    useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const [
-    housing,
-    setHousing,
-  ] =
-    useState<
-      Housing[]
-    >([]);
+  const [housing, setHousing] = useState<Housing[]>([]);
 
-  const [
-    housingLoading,
-    setHousingLoading,
-  ] =
-    useState(true);
+  const [housingLoading, setHousingLoading] = useState(true);
 
-  const [
-    selectedSlug,
-    setSelectedSlug,
-  ] =
-    useState(
-      initialSlug
-    );
+  const [selectedSlug, setSelectedSlug] = useState(initialSlug);
 
-  const [
-    overall,
-    setOverall,
-  ] =
-    useState(5);
+  const [overall, setOverall] = useState(5);
 
-  const [
-    noise,
-    setNoise,
-  ] =
-    useState(5);
+  const [noise, setNoise] = useState(5);
 
-  const [
-    cleanliness,
-    setCleanliness,
-  ] =
-    useState(5);
+  const [cleanliness, setCleanliness] = useState(5);
 
-  const [
-    amenities,
-    setAmenities,
-  ] =
-    useState(5);
+  const [amenities, setAmenities] = useState(5);
 
-  const [
-    comment,
-    setComment,
-  ] =
-    useState("");
+  const [comment, setComment] = useState("");
 
-  const [
-    pros,
-    setPros,
-  ] =
-    useState("");
+  const [pros, setPros] = useState("");
 
-  const [
-    cons,
-    setCons,
-  ] =
-    useState("");
+  const [cons, setCons] = useState("");
 
-  const [
-    wouldRecommend,
-    setWouldRecommend,
-  ] =
-    useState(true);
+  const [wouldRecommend, setWouldRecommend] = useState(true);
 
-  const [
-    submitting,
-    setSubmitting,
-  ] =
-    useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [
-    error,
-    setError,
-  ] =
-    useState("");
+  const [error, setError] = useState("");
 
-  const [
-    success,
-    setSuccess,
-  ] =
-    useState("");
+  const [success, setSuccess] = useState("");
+
+  // =====================================================
+  // AUTHENTICATION
+  // =====================================================
 
   useEffect(() => {
-    let mounted =
-      true;
+    let mounted = true;
 
     async function loadUser() {
       const {
-        data: {
-          user,
-        },
-      } =
-        await supabase.auth.getUser();
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!mounted) {
         return;
       }
 
       if (!user) {
-        const destination =
-          initialSlug
-            ? `/write-review?id=${initialSlug}`
-            : "/write-review";
+        const destination = initialSlug
+          ? `/write-review?id=${encodeURIComponent(initialSlug)}`
+          : "/write-review";
 
         router.replace(
-          `/login?redirect=${encodeURIComponent(
-            destination
-          )}`
+          `/login?redirect=${encodeURIComponent(destination)}`
         );
 
         return;
@@ -209,158 +135,118 @@ export default function WriteReviewPage() {
     loadUser();
 
     const {
-      data: {
-        subscription,
-      },
-    } =
-      supabase.auth.onAuthStateChange(
-        (
-          _event,
-          session
-        ) => {
-          if (
-            !session?.user
-          ) {
-            router.replace(
-              "/login?redirect=/write-review"
-            );
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        const destination = initialSlug
+          ? `/write-review?id=${encodeURIComponent(initialSlug)}`
+          : "/write-review";
 
-            return;
-          }
+        router.replace(
+          `/login?redirect=${encodeURIComponent(destination)}`
+        );
 
-          setUser(
-            session.user
-          );
+        return;
+      }
 
-          setAuthLoading(
-            false
-          );
-        }
-      );
+      setUser(session.user);
+      setAuthLoading(false);
+    });
 
     return () => {
       mounted = false;
-
       subscription.unsubscribe();
     };
-  }, [
-    router,
-    initialSlug,
-  ]);
+  }, [router, initialSlug]);
+
+  // =====================================================
+  // LOAD HOUSING
+  // =====================================================
 
   useEffect(() => {
+    let mounted = true;
+
     async function loadHousing() {
       try {
-        setHousingLoading(
-          true
-        );
+        setHousingLoading(true);
 
-        const response =
-          await fetch(
-            "/api/browse-housing",
-            {
-              cache:
-                "no-store",
-            }
-          );
+        const response = await fetch("/api/browse-housing", {
+          cache: "no-store",
+        });
 
-        const result =
-          await response.json();
+        const result = await response.json();
 
-        if (
-          !response.ok
-        ) {
+        if (!response.ok) {
           throw new Error(
-            result?.error ||
-              "Unable to load housing."
+            result?.error || "Unable to load housing."
           );
         }
 
-        const normalized: Housing[] =
-          Array.isArray(
-            result
-          )
-            ? result.map(
-                (
-                  item
-                ) => ({
-                  id:
-                    String(
-                      item.id ??
-                        ""
-                    ),
+        const normalized: Housing[] = Array.isArray(result)
+          ? result.map((item) => ({
+              id: String(item.id ?? item.slug ?? ""),
 
-                  slug:
-                    String(
-                      item.id ??
-                        item.slug ??
-                        ""
-                    ),
+              slug: String(item.slug ?? item.id ?? ""),
 
-                  name:
-                    String(
-                      item.name ??
-                        "Unknown Housing"
-                    ),
+              name: String(item.name ?? "Unknown Housing"),
 
-                  category:
-                    String(
-                      item.category ??
-                        ""
-                    ),
+              category: String(item.category ?? ""),
 
-                  address:
-                    String(
-                      item.address ??
-                        ""
-                    ),
+              address: String(item.address ?? ""),
 
-                  shortLocation:
-                    String(
-                      item.shortLocation ??
-                        item.short_location ??
-                        "Near UTA"
-                    ),
+              shortLocation: String(
+                item.shortLocation ??
+                  item.short_location ??
+                  "Near UTA"
+              ),
 
-                  image:
-                    String(
-                      item.image ??
-                        ""
-                    ),
-                })
-              )
-            : [];
+              image: String(item.image ?? ""),
+            }))
+          : [];
 
-        setHousing(
-          normalized
-        );
+        if (!mounted) {
+          return;
+        }
+
+        setHousing(normalized);
 
         if (
           initialSlug &&
           normalized.some(
-            (
-              item
-            ) =>
-              item.slug ===
-              initialSlug
+            (item) =>
+              item.slug === initialSlug ||
+              item.id === initialSlug
           )
         ) {
-          setSelectedSlug(
-            initialSlug
+          const matchingProperty = normalized.find(
+            (item) =>
+              item.slug === initialSlug ||
+              item.id === initialSlug
           );
-        } else if (
-          normalized.length >
-            0 &&
-          !selectedSlug
-        ) {
-          setSelectedSlug(
-            normalized[0].slug
-          );
+
+          if (matchingProperty) {
+            setSelectedSlug(matchingProperty.slug);
+          }
+        } else if (normalized.length > 0) {
+          setSelectedSlug((currentSlug) => {
+            if (
+              currentSlug &&
+              normalized.some(
+                (item) => item.slug === currentSlug
+              )
+            ) {
+              return currentSlug;
+            }
+
+            return normalized[0].slug;
+          });
         }
       } catch (error) {
-        console.error(
-          error
-        );
+        console.error(error);
+
+        if (!mounted) {
+          return;
+        }
 
         setError(
           error instanceof Error
@@ -368,55 +254,51 @@ export default function WriteReviewPage() {
             : "Unable to load housing."
         );
       } finally {
-        setHousingLoading(
-          false
-        );
+        if (mounted) {
+          setHousingLoading(false);
+        }
       }
     }
 
     loadHousing();
-  }, [
-    initialSlug,
-    selectedSlug,
-  ]);
 
-  const selectedHousing =
-    useMemo(
-      () =>
-        housing.find(
-          (
-            property
-          ) =>
-            property.slug ===
-            selectedSlug
-        ) ??
-        null,
-      [
-        housing,
-        selectedSlug,
-      ]
-    );
+    return () => {
+      mounted = false;
+    };
+  }, [initialSlug]);
 
-  const reviewerName =
-    useMemo(() => {
-      if (!user) {
-        return "";
-      }
+  // =====================================================
+  // SELECTED HOUSING
+  // =====================================================
 
-      const fullName =
-        typeof user.user_metadata
-          ?.full_name ===
-        "string"
-          ? user.user_metadata.full_name
-          : null;
+  const selectedHousing = useMemo(
+    () =>
+      housing.find(
+        (property) => property.slug === selectedSlug
+      ) ?? null,
+    [housing, selectedSlug]
+  );
 
-      return getUserDisplayName(
-        fullName,
-        user.email
-      );
-    }, [
-      user,
-    ]);
+  // =====================================================
+  // REVIEWER NAME
+  // =====================================================
+
+  const reviewerName = useMemo(() => {
+    if (!user) {
+      return "";
+    }
+
+    const fullName =
+      typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : null;
+
+    return getUserDisplayName(fullName, user.email);
+  }, [user]);
+
+  // =====================================================
+  // SUBMIT REVIEW
+  // =====================================================
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -426,20 +308,12 @@ export default function WriteReviewPage() {
     setError("");
     setSuccess("");
 
-    if (
-      !selectedHousing
-    ) {
-      setError(
-        "Please choose a housing property."
-      );
-
+    if (!selectedHousing) {
+      setError("Please choose a housing property.");
       return;
     }
 
-    if (
-      comment.trim().length <
-      10
-    ) {
+    if (comment.trim().length < 10) {
       setError(
         "Please write at least 10 characters about your experience."
       );
@@ -447,17 +321,12 @@ export default function WriteReviewPage() {
       return;
     }
 
-    setSubmitting(
-      true
-    );
+    setSubmitting(true);
 
     try {
       const {
-        data: {
-          session,
-        },
-      } =
-        await supabase.auth.getSession();
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session) {
         throw new Error(
@@ -465,59 +334,41 @@ export default function WriteReviewPage() {
         );
       }
 
-      const response =
-        await fetch(
-          "/api/reviews",
-          {
-            method:
-              "POST",
+      const response = await fetch("/api/reviews", {
+        method: "POST",
 
-            headers: {
-              "Content-Type":
-                "application/json",
+        headers: {
+          "Content-Type": "application/json",
 
-              Authorization:
-                `Bearer ${session.access_token}`,
-            },
+          Authorization: `Bearer ${session.access_token}`,
+        },
 
-            body:
-              JSON.stringify(
-                {
-                  housingSlug:
-                    selectedHousing.slug,
+        body: JSON.stringify({
+          housingSlug: selectedHousing.slug,
 
-                  housingName:
-                    selectedHousing.name,
+          housingName: selectedHousing.name,
 
-                  overall,
+          overall,
 
-                  noise,
+          noise,
 
-                  cleanliness,
+          cleanliness,
 
-                  amenities,
+          amenities,
 
-                  comment:
-                    comment.trim(),
+          comment: comment.trim(),
 
-                  pros:
-                    pros.trim(),
+          pros: pros.trim(),
 
-                  cons:
-                    cons.trim(),
+          cons: cons.trim(),
 
-                  wouldRecommend,
-                }
-              ),
-          }
-        );
+          wouldRecommend,
+        }),
+      });
 
-      const result =
-        await response.json();
+      const result = await response.json();
 
-      if (
-        !response.ok
-      ) {
+      if (!response.ok) {
         throw new Error(
           result?.details ||
             result?.error ||
@@ -525,18 +376,11 @@ export default function WriteReviewPage() {
         );
       }
 
-      setSuccess(
-        "Your review has been published!"
-      );
+      setSuccess("Your review has been published!");
 
-      setTimeout(
-        () => {
-          router.push(
-            `/housing/${selectedHousing.slug}`
-          );
-        },
-        1000
-      );
+      setTimeout(() => {
+        router.push(`/housing/${selectedHousing.slug}`);
+      }, 1000);
     } catch (error) {
       setError(
         error instanceof Error
@@ -544,26 +388,22 @@ export default function WriteReviewPage() {
           : "Unable to submit your review."
       );
     } finally {
-      setSubmitting(
-        false
-      );
+      setSubmitting(false);
     }
   }
 
-  if (
-    authLoading
-  ) {
+  // =====================================================
+  // AUTH LOADING
+  // =====================================================
+
+  if (authLoading) {
     return (
       <main className="min-h-screen bg-slate-50 pt-28">
-
         <div className="mx-auto max-w-6xl px-6 py-20 text-center">
-
           <p className="text-slate-500">
             Checking your account...
           </p>
-
         </div>
-
       </main>
     );
   }
@@ -572,12 +412,16 @@ export default function WriteReviewPage() {
     return null;
   }
 
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <main className="min-h-screen bg-[#f8fafc] pt-20">
 
       {/* HEADER */}
-      <section className="border-b border-slate-200 bg-white">
 
+      <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
 
           <Link
@@ -600,21 +444,19 @@ export default function WriteReviewPage() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600">
-            Your feedback can help another UTA student understand what living
-            here is actually like.
+            Your feedback can help another UTA student
+            understand what living here is actually like.
           </p>
 
         </div>
-
       </section>
 
       <section className="mx-auto grid max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1fr_350px] lg:px-8">
 
         {/* FORM */}
+
         <form
-          onSubmit={
-            handleSubmit
-          }
+          onSubmit={handleSubmit}
           className="space-y-8"
         >
 
@@ -631,133 +473,87 @@ export default function WriteReviewPage() {
           )}
 
           {/* PROPERTY */}
+
           <FormCard
             number="1"
             title="Choose the property"
             description="Tell us which housing option you are reviewing."
           >
-
             <select
-              value={
-                selectedSlug
+              value={selectedSlug}
+              onChange={(event) =>
+                setSelectedSlug(event.target.value)
               }
-              onChange={(
-                event
-              ) =>
-                setSelectedSlug(
-                  event.target.value
-                )
-              }
-              disabled={
-                housingLoading
-              }
+              disabled={housingLoading}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-4 font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             >
-
               <option value="">
-                Select housing
+                {housingLoading
+                  ? "Loading housing..."
+                  : "Select housing"}
               </option>
 
-              {housing.map(
-                (
-                  property
-                ) => (
-                  <option
-                    key={
-                      property.slug
-                    }
-                    value={
-                      property.slug
-                    }
-                  >
-                    {
-                      property.name
-                    }
-                  </option>
-                )
-              )}
-
+              {housing.map((property) => (
+                <option
+                  key={property.slug}
+                  value={property.slug}
+                >
+                  {property.name}
+                </option>
+              ))}
             </select>
-
           </FormCard>
 
           {/* RATINGS */}
+
           <FormCard
             number="2"
             title="Rate your experience"
             description="Give other students a quick picture of what living here was like."
           >
-
             <RatingRow
               title="Overall"
               subtitle="Your overall housing experience"
-              value={
-                overall
-              }
-              onChange={
-                setOverall
-              }
+              value={overall}
+              onChange={setOverall}
             />
 
             <RatingRow
               title="Cleanliness"
               subtitle="Condition of rooms and common areas"
-              value={
-                cleanliness
-              }
-              onChange={
-                setCleanliness
-              }
+              value={cleanliness}
+              onChange={setCleanliness}
             />
 
             <RatingRow
               title="Noise"
               subtitle="Your experience with noise levels"
-              value={
-                noise
-              }
-              onChange={
-                setNoise
-              }
+              value={noise}
+              onChange={setNoise}
             />
 
             <RatingRow
               title="Amenities"
               subtitle="Quality and usefulness of amenities"
-              value={
-                amenities
-              }
-              onChange={
-                setAmenities
-              }
+              value={amenities}
+              onChange={setAmenities}
             />
-
           </FormCard>
 
           {/* REVIEW */}
+
           <FormCard
             number="3"
             title="Tell students what it was like"
             description="Specific and balanced reviews are usually the most helpful."
           >
-
             <textarea
-              value={
-                comment
+              value={comment}
+              onChange={(event) =>
+                setComment(event.target.value)
               }
-              onChange={(
-                event
-              ) =>
-                setComment(
-                  event.target.value
-                )
-              }
-              rows={
-                7
-              }
-              maxLength={
-                3000
-              }
+              rows={7}
+              maxLength={3000}
               placeholder="What was your experience with the location, management, maintenance, parking, roommates, safety, or overall atmosphere?"
               className="w-full resize-none rounded-xl border border-slate-300 px-4 py-4 leading-7 text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             />
@@ -765,89 +561,65 @@ export default function WriteReviewPage() {
             <p className="mt-2 text-right text-xs text-slate-400">
               {comment.length}/3000
             </p>
-
           </FormCard>
 
           {/* PROS / CONS */}
+
           <FormCard
             number="4"
             title="What stood out?"
             description="Highlight the best parts and anything students should know beforehand."
           >
-
             <div className="grid gap-5 md:grid-cols-2">
 
               <div>
-
                 <label className="font-bold text-emerald-700">
                   Pros
                 </label>
 
                 <textarea
-                  value={
-                    pros
+                  value={pros}
+                  onChange={(event) =>
+                    setPros(event.target.value)
                   }
-                  onChange={(
-                    event
-                  ) =>
-                    setPros(
-                      event.target.value
-                    )
-                  }
-                  rows={
-                    4
-                  }
+                  rows={4}
                   placeholder="Close to campus, good amenities..."
                   className="mt-3 w-full resize-none rounded-xl border border-emerald-200 bg-emerald-50/40 px-4 py-4 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
                 />
-
               </div>
 
               <div>
-
                 <label className="font-bold text-red-700">
                   Cons
                 </label>
 
                 <textarea
-                  value={
-                    cons
+                  value={cons}
+                  onChange={(event) =>
+                    setCons(event.target.value)
                   }
-                  onChange={(
-                    event
-                  ) =>
-                    setCons(
-                      event.target.value
-                    )
-                  }
-                  rows={
-                    4
-                  }
+                  rows={4}
                   placeholder="Parking, weekend noise..."
                   className="mt-3 w-full resize-none rounded-xl border border-red-200 bg-red-50/40 px-4 py-4 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-100"
                 />
-
               </div>
 
             </div>
-
           </FormCard>
 
           {/* RECOMMEND */}
+
           <FormCard
             number="5"
             title="Would you recommend it?"
             description="Would you tell another UTA student to consider living here?"
           >
-
             <div className="grid gap-3 sm:grid-cols-2">
 
               <button
                 type="button"
                 onClick={() =>
-                  setWouldRecommend(
-                    true
-                  )
+                  setWouldRecommend(true)
                 }
                 className={`rounded-2xl border p-5 text-left transition ${
                   wouldRecommend
@@ -855,7 +627,6 @@ export default function WriteReviewPage() {
                     : "border-slate-200 bg-white hover:border-blue-200"
                 }`}
               >
-
                 <p className="text-xl">
                   👍
                 </p>
@@ -867,15 +638,12 @@ export default function WriteReviewPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   I would recommend this property.
                 </p>
-
               </button>
 
               <button
                 type="button"
                 onClick={() =>
-                  setWouldRecommend(
-                    false
-                  )
+                  setWouldRecommend(false)
                 }
                 className={`rounded-2xl border p-5 text-left transition ${
                   !wouldRecommend
@@ -883,7 +651,6 @@ export default function WriteReviewPage() {
                     : "border-slate-200 bg-white hover:border-blue-200"
                 }`}
               >
-
                 <p className="text-xl">
                   👎
                 </p>
@@ -895,14 +662,13 @@ export default function WriteReviewPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   I would choose another option.
                 </p>
-
               </button>
 
             </div>
-
           </FormCard>
 
           {/* SUBMIT */}
+
           <div className="flex flex-col gap-3 sm:flex-row">
 
             <button
@@ -932,27 +698,21 @@ export default function WriteReviewPage() {
         </form>
 
         {/* SIDEBAR */}
-        <aside>
 
+        <aside>
           <div className="sticky top-28 space-y-5">
 
             {selectedHousing && (
               <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
 
                 <div className="relative h-44">
-
                   <Image
-                    src={resolveImageSrc(
-                      selectedHousing
-                    )}
-                    alt={
-                      selectedHousing.name
-                    }
+                    src={resolveImageSrc(selectedHousing)}
+                    alt={selectedHousing.name}
                     fill
                     className="object-cover"
                     sizes="350px"
                   />
-
                 </div>
 
                 <div className="p-5">
@@ -970,11 +730,11 @@ export default function WriteReviewPage() {
                   </p>
 
                 </div>
-
               </div>
             )}
 
             {/* USER */}
+
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
 
               <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -985,9 +745,7 @@ export default function WriteReviewPage() {
 
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-700 text-lg font-extrabold text-white">
                   {reviewerName
-                    .charAt(
-                      0
-                    )
+                    .charAt(0)
                     .toUpperCase()}
                 </div>
 
@@ -998,8 +756,7 @@ export default function WriteReviewPage() {
                   </p>
 
                   {user.email &&
-                    reviewerName !==
-                      user.email && (
+                    reviewerName !== user.email && (
                       <p className="mt-1 truncate text-sm text-slate-500">
                         {user.email}
                       </p>
@@ -1012,6 +769,7 @@ export default function WriteReviewPage() {
             </div>
 
             {/* TIPS */}
+
             <div className="rounded-3xl bg-slate-950 p-6 text-white">
 
               <p className="text-lg font-extrabold">
@@ -1041,14 +799,16 @@ export default function WriteReviewPage() {
             </div>
 
           </div>
-
         </aside>
 
       </section>
-
     </main>
   );
 }
+
+// =====================================================
+// FORM CARD
+// =====================================================
 
 function FormCard({
   number,
@@ -1092,6 +852,10 @@ function FormCard({
   );
 }
 
+// =====================================================
+// RATING ROW
+// =====================================================
+
 function RatingRow({
   title,
   subtitle,
@@ -1101,9 +865,7 @@ function RatingRow({
   title: string;
   subtitle: string;
   value: number;
-  onChange: (
-    value: number
-  ) => void;
+  onChange: (value: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4 border-b border-slate-100 py-5 first:pt-0 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
@@ -1122,38 +884,33 @@ function RatingRow({
 
       <div className="flex gap-2">
 
-        {[1, 2, 3, 4, 5].map(
-          (
-            rating
-          ) => (
-            <button
-              key={
-                rating
-              }
-              type="button"
-              onClick={() =>
-                onChange(
-                  rating
-                )
-              }
-              aria-label={`${rating} stars`}
-              className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl transition ${
-                rating <=
-                value
-                  ? "bg-amber-100 text-amber-500"
-                  : "bg-slate-100 text-slate-300 hover:bg-slate-200"
-              }`}
-            >
-              ★
-            </button>
-          )
-        )}
+        {[1, 2, 3, 4, 5].map((rating) => (
+          <button
+            key={rating}
+            type="button"
+            onClick={() =>
+              onChange(rating)
+            }
+            aria-label={`${rating} stars`}
+            className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl transition ${
+              rating <= value
+                ? "bg-amber-100 text-amber-500"
+                : "bg-slate-100 text-slate-300 hover:bg-slate-200"
+            }`}
+          >
+            ★
+          </button>
+        ))}
 
       </div>
 
     </div>
   );
 }
+
+// =====================================================
+// TIP
+// =====================================================
 
 function Tip({
   children,
@@ -1172,5 +929,56 @@ function Tip({
       </p>
 
     </div>
+  );
+}
+
+// =====================================================
+// SUSPENSE LOADING
+// =====================================================
+
+function WriteReviewLoading() {
+  return (
+    <main className="min-h-screen bg-[#f8fafc] pt-20">
+
+      <section className="border-b border-slate-200 bg-white">
+
+        <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
+
+          <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+
+          <div className="mt-7 h-4 w-28 animate-pulse rounded bg-slate-200" />
+
+          <div className="mt-4 h-12 w-80 max-w-full animate-pulse rounded bg-slate-200" />
+
+          <div className="mt-5 h-6 w-[500px] max-w-full animate-pulse rounded bg-slate-200" />
+
+        </div>
+
+      </section>
+
+      <section className="mx-auto grid max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1fr_350px] lg:px-8">
+
+        <div className="space-y-8">
+
+          {[1, 2, 3, 4].map((item) => (
+            <div
+              key={item}
+              className="h-56 animate-pulse rounded-3xl border border-slate-200 bg-white"
+            />
+          ))}
+
+        </div>
+
+        <div className="space-y-5">
+
+          <div className="h-80 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+
+          <div className="h-40 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+
+        </div>
+
+      </section>
+
+    </main>
   );
 }

@@ -18,9 +18,6 @@ import type {
 
 // =====================================================
 // EXTENDED TYPE
-//
-// This keeps compatibility with HousingItem while
-// allowing the new database classification fields.
 // =====================================================
 
 type HousingProfileItem =
@@ -182,13 +179,14 @@ export default function HousingProfileClient({
   // =====================================================
   // LIVE REVIEWS
   //
-  // We keep these for recommendation percentage.
+  // ReviewSection sends the current review list here.
   //
-  // IMPORTANT:
-  // We DO NOT recalculate the overall property rating
-  // from category averages anymore.
+  // We use this list for:
   //
-  // ratingauth.score is the source of truth.
+  // 1. Live overall property rating
+  // 2. Recommendation percentage
+  // 3. Updating the profile immediately after review
+  //    changes
   // =====================================================
 
   const [
@@ -205,16 +203,101 @@ export default function HousingProfileClient({
     );
 
   // =====================================================
-  // OVERALL RATING
+  // LIVE OVERALL RATING
   //
-  // Comes directly from ratingauth via page.tsx.
+  // IMPORTANT:
+  //
+  // The property's main rating is calculated ONLY from
+  // each review's "overall" rating.
+  //
+  // Example:
+  //
+  // Review 1 overall = 5
+  // Review 2 overall = 4
+  //
+  // Property rating = 4.5
+  //
+  // We do NOT average noise, cleanliness, amenities,
+  // etc. into the main property rating.
   // =====================================================
 
   const averageRating =
-    Number(
-      apartment.rating ??
+    useMemo(() => {
+      // ReviewSection has not loaded yet.
+      //
+      // Use the server-provided rating temporarily
+      // so the page does not flash 0 while loading.
+
+      if (
+        liveReviews.length ===
         0
-    );
+      ) {
+        return Number(
+          apartment.rating ??
+            0
+        );
+      }
+
+      // Only use reviews with a valid overall score.
+
+      const validReviews =
+        liveReviews.filter(
+          (
+            review
+          ) => {
+            const overall =
+              Number(
+                review
+                  .categories
+                  .overall
+              );
+
+            return (
+              Number.isFinite(
+                overall
+              ) &&
+              overall > 0
+            );
+          }
+        );
+
+      // If reviews exist but none contain a valid
+      // overall rating, fall back to the original
+      // server rating.
+
+      if (
+        validReviews.length ===
+        0
+      ) {
+        return Number(
+          apartment.rating ??
+            0
+        );
+      }
+
+      const total =
+        validReviews.reduce(
+          (
+            sum,
+            review
+          ) =>
+            sum +
+            Number(
+              review
+                .categories
+                .overall
+            ),
+          0
+        );
+
+      return (
+        total /
+        validReviews.length
+      );
+    }, [
+      liveReviews,
+      apartment.rating,
+    ]);
 
   // =====================================================
   // RECOMMENDATION %

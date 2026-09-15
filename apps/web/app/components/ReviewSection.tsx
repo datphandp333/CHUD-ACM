@@ -1,10 +1,21 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
+
+import Link from "next/link";
+
+import {
+  supabase,
+} from "@/app/lib/supabaseClient";
+
+// =====================================================
+// TYPES
+// =====================================================
 
 type ReviewCategories = {
   overall: number;
@@ -13,14 +24,27 @@ type ReviewCategories = {
   amenities: number;
 };
 
+type UserReaction =
+  | 1
+  | -1
+  | null;
+
 export type ReviewItem = {
   id: number;
+
+  userId: string | null;
+
   user: string;
+
   date: string;
+  rawDate: string;
+
   comment: string;
 
   likes: number;
   dislikes: number;
+
+  userReaction: UserReaction;
 
   pros: string;
   cons: string;
@@ -30,6 +54,7 @@ export type ReviewItem = {
   categories: ReviewCategories;
 
   isExternalSummary: boolean;
+
   sourceName: string;
   sourceUrl: string;
 };
@@ -37,9 +62,9 @@ export type ReviewItem = {
 type ReviewSectionProps = {
   apartmentId: string;
 
-  onReviewCountChange?: React.Dispatch<
-    React.SetStateAction<number>
-  >;
+  onReviewCountChange?: (
+    count: number
+  ) => void;
 
   onReviewsLoaded?: (
     reviews: ReviewItem[]
@@ -50,7 +75,7 @@ type ReviewApiRow = {
   id: number;
 
   user_id: string | null;
-  user_name: string;
+  user_name: string | null;
   user_email: string | null;
 
   housing_slug: string;
@@ -58,7 +83,7 @@ type ReviewApiRow = {
 
   review_date: string;
 
-  comment: string;
+  comment: string | null;
 
   likes: number | null;
   dislikes: number | null;
@@ -68,27 +93,35 @@ type ReviewApiRow = {
 
   would_recommend: boolean | null;
 
-  overall: number;
-  noise: number;
-  cleanliness: number;
-  amenities: number;
+  overall: number | null;
+  noise: number | null;
+  cleanliness: number | null;
+  amenities: number | null;
 
   source_type: string | null;
   source_name: string | null;
   source_url: string | null;
+
   is_external_summary: boolean | null;
 
   created_at: string;
 };
 
-type ReviewApiResponse = {
-  reviews: ReviewApiRow[];
+type ReactionRow = {
+  review_id: number;
+  user_id: string;
+  reaction: number;
 };
+
+// =====================================================
+// DATE
+// =====================================================
 
 function formatReviewDate(
   value: string
 ) {
-  const parsed = new Date(value);
+  const parsed =
+    new Date(value);
 
   if (
     Number.isNaN(
@@ -108,11 +141,20 @@ function formatReviewDate(
   );
 }
 
+// =====================================================
+// MAP REVIEW
+// =====================================================
+
 function mapReviewRow(
   row: ReviewApiRow
 ): ReviewItem {
   return {
-    id: row.id,
+    id:
+      Number(row.id),
+
+    userId:
+      row.user_id ??
+      null,
 
     user:
       row.user_name ||
@@ -124,24 +166,30 @@ function mapReviewRow(
         row.review_date
       ),
 
+    rawDate:
+      row.review_date,
+
     comment:
-      row.comment ?? "",
+      row.comment ??
+      "",
 
-    likes:
-      Number(
-        row.likes ?? 0
-      ),
+    // These will be replaced by the values calculated
+    // from review_reactions after reviews are loaded.
 
-    dislikes:
-      Number(
-        row.dislikes ?? 0
-      ),
+    likes: 0,
+
+    dislikes: 0,
+
+    userReaction:
+      null,
 
     pros:
-      row.pros ?? "",
+      row.pros ??
+      "",
 
     cons:
-      row.cons ?? "",
+      row.cons ??
+      "",
 
     wouldRecommend:
       Boolean(
@@ -151,22 +199,26 @@ function mapReviewRow(
     categories: {
       overall:
         Number(
-          row.overall
+          row.overall ??
+          0
         ),
 
       noise:
         Number(
-          row.noise
+          row.noise ??
+          0
         ),
 
       cleanliness:
         Number(
-          row.cleanliness
+          row.cleanliness ??
+          0
         ),
 
       amenities:
         Number(
-          row.amenities
+          row.amenities ??
+          0
         ),
     },
 
@@ -176,33 +228,33 @@ function mapReviewRow(
       ),
 
     sourceName:
-      row.source_name ?? "",
+      row.source_name ??
+      "",
 
     sourceUrl:
-      row.source_url ?? "",
+      row.source_url ??
+      "",
   };
 }
+
+// =====================================================
+// MAIN REVIEW RATING
+//
+// Main score = OVERALL only.
+// =====================================================
 
 function getAverageRating(
   review: ReviewItem
 ) {
-  const values =
-    Object.values(
-      review.categories
-    );
-
-  return (
-    values.reduce(
-      (
-        sum,
-        value
-      ) =>
-        sum + value,
-      0
-    ) /
-    values.length
+  return Number(
+    review.categories.overall ??
+    0
   );
 }
+
+// =====================================================
+// COMPONENT
+// =====================================================
 
 export default function ReviewSection({
   apartmentId,
@@ -216,6 +268,14 @@ export default function ReviewSection({
     useState<
       ReviewItem[]
     >([]);
+
+  const [
+    currentUserId,
+    setCurrentUserId,
+  ] =
+    useState<
+      string | null
+    >(null);
 
   const [
     sortBy,
@@ -239,13 +299,287 @@ export default function ReviewSection({
   ] =
     useState("");
 
+  const [
+    reactionError,
+    setReactionError,
+  ] =
+    useState("");
+
+  const [
+    reactingReviewId,
+    setReactingReviewId,
+  ] =
+    useState<
+      number | null
+    >(null);
+
+  const [
+    deleteConfirmId,
+    setDeleteConfirmId,
+  ] =
+    useState<
+      number | null
+    >(null);
+
+  const [
+    deletingReviewId,
+    setDeletingReviewId,
+  ] =
+    useState<
+      number | null
+    >(null);
+
+  const [
+    deleteError,
+    setDeleteError,
+  ] =
+    useState("");
+
+  // ===================================================
+  // CURRENT USER
+  // ===================================================
+
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
+
+    async function loadCurrentUser() {
+      const {
+        data,
+        error:
+          authError,
+      } =
+        await supabase.auth.getUser();
+
+      if (
+        cancelled
+      ) {
+        return;
+      }
+
+      if (
+        authError
+      ) {
+        console.error(
+          "Load current user error:",
+          authError
+        );
+
+        setCurrentUserId(
+          null
+        );
+
+        return;
+      }
+
+      setCurrentUserId(
+        data.user?.id ??
+        null
+      );
+    }
+
+    loadCurrentUser();
+
+    const {
+      data:
+        authListener,
+    } =
+      supabase.auth.onAuthStateChange(
+        (
+          _event,
+          session
+        ) => {
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+          setCurrentUserId(
+            session
+              ?.user
+              ?.id ??
+            null
+          );
+        }
+      );
+
+    return () => {
+      cancelled =
+        true;
+
+      authListener
+        .subscription
+        .unsubscribe();
+    };
+  }, []);
+
+  // ===================================================
+  // LOAD REACTION COUNTS
+  // ===================================================
+
+  const attachReactionData =
+    useCallback(
+      async (
+        reviewList:
+          ReviewItem[]
+      ) => {
+        if (
+          reviewList.length ===
+          0
+        ) {
+          return reviewList;
+        }
+
+        const reviewIds =
+          reviewList.map(
+            (
+              review
+            ) =>
+              review.id
+          );
+
+        const {
+          data:
+            reactionData,
+          error:
+            reactionLoadError,
+        } =
+          await supabase
+            .from(
+              "review_reactions"
+            )
+            .select(
+              "review_id, user_id, reaction"
+            )
+            .in(
+              "review_id",
+              reviewIds
+            );
+
+        if (
+          reactionLoadError
+        ) {
+          console.error(
+            "Load review reactions error:",
+            reactionLoadError
+          );
+
+          return reviewList;
+        }
+
+        const reactionRows =
+          (
+            reactionData ??
+            []
+          ) as ReactionRow[];
+
+        return reviewList.map(
+          (
+            review
+          ) => {
+            const reviewReactions =
+              reactionRows.filter(
+                (
+                  reaction
+                ) =>
+                  Number(
+                    reaction.review_id
+                  ) ===
+                  review.id
+              );
+
+            const likes =
+              reviewReactions.filter(
+                (
+                  reaction
+                ) =>
+                  Number(
+                    reaction.reaction
+                  ) ===
+                  1
+              ).length;
+
+            const dislikes =
+              reviewReactions.filter(
+                (
+                  reaction
+                ) =>
+                  Number(
+                    reaction.reaction
+                  ) ===
+                  -1
+              ).length;
+
+            const myReaction =
+              currentUserId
+                ? reviewReactions.find(
+                    (
+                      reaction
+                    ) =>
+                      reaction.user_id ===
+                      currentUserId
+                  )
+                : undefined;
+
+            let userReaction:
+              UserReaction =
+              null;
+
+            if (
+              Number(
+                myReaction?.reaction
+              ) ===
+              1
+            ) {
+              userReaction =
+                1;
+            }
+
+            if (
+              Number(
+                myReaction?.reaction
+              ) ===
+              -1
+            ) {
+              userReaction =
+                -1;
+            }
+
+            return {
+              ...review,
+
+              likes,
+
+              dislikes,
+
+              userReaction,
+            };
+          }
+        );
+      },
+      [
+        currentUserId,
+      ]
+    );
+
+  // ===================================================
+  // LOAD REVIEWS
+  // ===================================================
+
+  useEffect(() => {
+    let cancelled =
+      false;
 
     async function loadReviews() {
       try {
-        setLoading(true);
-        setError("");
+        setLoading(
+          true
+        );
+
+        setError(
+          ""
+        );
 
         const response =
           await fetch(
@@ -253,58 +587,66 @@ export default function ReviewSection({
               apartmentId
             )}`,
             {
-              cache: "no-store",
+              cache:
+                "no-store",
             }
           );
 
         const result =
-          (await response.json()) as
-            | ReviewApiResponse
-            | {
-                error?: string;
-                details?: string;
-              };
+          await response.json();
 
-        if (!response.ok) {
-          const errorResult =
-            result as {
-              error?: string;
-              details?: string;
-            };
-
+        if (
+          !response.ok
+        ) {
           throw new Error(
-            errorResult.details ||
-              errorResult.error ||
-              "Failed to load reviews."
+            result.details ||
+            result.error ||
+            "Failed to load reviews."
           );
         }
-
-        const reviewResult =
-          result as ReviewApiResponse;
 
         const mapped =
           (
-            reviewResult.reviews ??
+            result.reviews ??
             []
           ).map(
-            mapReviewRow
+            (
+              row:
+                ReviewApiRow
+            ) =>
+              mapReviewRow(
+                row
+              )
           );
 
-        if (cancelled) {
+        const withReactions =
+          await attachReactionData(
+            mapped
+          );
+
+        if (
+          cancelled
+        ) {
           return;
         }
 
-        setReviews(mapped);
+        setReviews(
+          withReactions
+        );
 
         onReviewCountChange?.(
-          mapped.length
+          withReactions.length
         );
 
         onReviewsLoaded?.(
-          mapped
+          withReactions
         );
-      } catch (err) {
-        if (cancelled) {
+      } catch (
+        err
+      ) {
+        if (
+          cancelled
+        ) {
           return;
         }
 
@@ -313,7 +655,9 @@ export default function ReviewSection({
           err
         );
 
-        setReviews([]);
+        setReviews(
+          []
+        );
 
         onReviewCountChange?.(
           0
@@ -326,11 +670,15 @@ export default function ReviewSection({
         setError(
           err instanceof Error
             ? err.message
-            : "Could not load reviews right now."
+            : "Could not load reviews."
         );
       } finally {
-        if (!cancelled) {
-          setLoading(false);
+        if (
+          !cancelled
+        ) {
+          setLoading(
+            false
+          );
         }
       }
     }
@@ -338,13 +686,19 @@ export default function ReviewSection({
     loadReviews();
 
     return () => {
-      cancelled = true;
+      cancelled =
+        true;
     };
   }, [
     apartmentId,
+    attachReactionData,
     onReviewCountChange,
     onReviewsLoaded,
   ]);
+
+  // ===================================================
+  // SORT
+  // ===================================================
 
   const sortedReviews =
     useMemo(() => {
@@ -353,10 +707,14 @@ export default function ReviewSection({
       ];
 
       if (
-        sortBy === "highest"
+        sortBy ===
+        "highest"
       ) {
         return copied.sort(
-          (a, b) =>
+          (
+            a,
+            b
+          ) =>
             getAverageRating(
               b
             ) -
@@ -367,10 +725,14 @@ export default function ReviewSection({
       }
 
       if (
-        sortBy === "lowest"
+        sortBy ===
+        "lowest"
       ) {
         return copied.sort(
-          (a, b) =>
+          (
+            a,
+            b
+          ) =>
             getAverageRating(
               a
             ) -
@@ -381,18 +743,25 @@ export default function ReviewSection({
       }
 
       return copied.sort(
-        (a, b) =>
+        (
+          a,
+          b
+        ) =>
           new Date(
-            b.date
+            b.rawDate
           ).getTime() -
           new Date(
-            a.date
+            a.rawDate
           ).getTime()
       );
     }, [
       reviews,
       sortBy,
     ]);
+
+  // ===================================================
+  // LIKE / DISLIKE
+  // ===================================================
 
   async function handleReaction(
     reviewId: number,
@@ -401,15 +770,64 @@ export default function ReviewSection({
       | "dislike"
   ) {
     try {
+      setReactionError(
+        ""
+      );
+
+      setReactingReviewId(
+        reviewId
+      );
+
+      // -----------------------------------------------
+      // GET AUTH SESSION
+      // -----------------------------------------------
+
+      const {
+        data:
+          sessionData,
+        error:
+          sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (
+        sessionError
+      ) {
+        throw new Error(
+          "Could not verify your login session."
+        );
+      }
+
+      const accessToken =
+        sessionData
+          .session
+          ?.access_token;
+
+      if (
+        !accessToken
+      ) {
+        throw new Error(
+          "You must be logged in to like or dislike a review."
+        );
+      }
+
+      // -----------------------------------------------
+      // CALL API
+      // -----------------------------------------------
+
       const response =
         await fetch(
           `/api/reviews/${reviewId}`,
           {
-            method: "PATCH",
+            method:
+              "PATCH",
 
             headers: {
               "Content-Type":
                 "application/json",
+
+              Authorization:
+                `Bearer ${accessToken}`,
             },
 
             body:
@@ -422,75 +840,230 @@ export default function ReviewSection({
       const result =
         await response.json();
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
         throw new Error(
+          result.details ||
           result.error ||
-            "Failed to update reaction."
+          "Failed to update reaction."
         );
       }
 
       const updated =
-        result as {
-          id: number;
-          likes:
-            | number
-            | null;
-          dislikes:
-            | number
-            | null;
-        };
+        result.review;
+
+      const userReactionValue =
+        Number(
+          updated?.userReaction
+        );
+
+      let nextUserReaction:
+        UserReaction =
+        null;
+
+      if (
+        userReactionValue ===
+        1
+      ) {
+        nextUserReaction =
+          1;
+      }
+
+      if (
+        userReactionValue ===
+        -1
+      ) {
+        nextUserReaction =
+          -1;
+      }
+
+      const nextReviews =
+        reviews.map(
+          (
+            review
+          ) =>
+            review.id ===
+            reviewId
+              ? {
+                  ...review,
+
+                  likes:
+                    Number(
+                      updated
+                        ?.likes ??
+                      0
+                    ),
+
+                  dislikes:
+                    Number(
+                      updated
+                        ?.dislikes ??
+                      0
+                    ),
+
+                  userReaction:
+                    nextUserReaction,
+                }
+              : review
+        );
 
       setReviews(
-        (
-          currentReviews
-        ) => {
-          const nextReviews =
-            currentReviews.map(
-              (
-                review
-              ) =>
-                review.id ===
-                reviewId
-                  ? {
-                      ...review,
-
-                      likes:
-                        Number(
-                          updated.likes ??
-                            0
-                        ),
-
-                      dislikes:
-                        Number(
-                          updated.dislikes ??
-                            0
-                        ),
-                    }
-                  : review
-            );
-
-          onReviewsLoaded?.(
-            nextReviews
-          );
-
-          return nextReviews;
-        }
+        nextReviews
       );
-    } catch (err) {
+
+      onReviewsLoaded?.(
+        nextReviews
+      );
+    } catch (
+      err
+    ) {
       console.error(
         "Review reaction error:",
         err
       );
+
+      setReactionError(
+        err instanceof Error
+          ? err.message
+          : "Could not update reaction."
+      );
+    } finally {
+      setReactingReviewId(
+        null
+      );
     }
   }
+
+  // ===================================================
+  // DELETE
+  // ===================================================
+
+  async function handleDeleteReview(
+    reviewId: number
+  ) {
+    try {
+      setDeleteError(
+        ""
+      );
+
+      setDeletingReviewId(
+        reviewId
+      );
+
+      const {
+        data:
+          sessionData,
+        error:
+          sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (
+        sessionError
+      ) {
+        throw new Error(
+          "Could not verify your login session."
+        );
+      }
+
+      const accessToken =
+        sessionData
+          .session
+          ?.access_token;
+
+      if (
+        !accessToken
+      ) {
+        throw new Error(
+          "You must be logged in to delete a review."
+        );
+      }
+
+      const response =
+        await fetch(
+          `/api/reviews/${reviewId}`,
+          {
+            method:
+              "DELETE",
+
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          result.details ||
+          result.error ||
+          "Failed to delete review."
+        );
+      }
+
+      const nextReviews =
+        reviews.filter(
+          (
+            review
+          ) =>
+            review.id !==
+            reviewId
+        );
+
+      setReviews(
+        nextReviews
+      );
+
+      onReviewCountChange?.(
+        nextReviews.length
+      );
+
+      onReviewsLoaded?.(
+        nextReviews
+      );
+
+      setDeleteConfirmId(
+        null
+      );
+    } catch (
+      err
+    ) {
+      console.error(
+        "Delete review error:",
+        err
+      );
+
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : "Could not delete review."
+      );
+    } finally {
+      setDeletingReviewId(
+        null
+      );
+    }
+  }
+
+  // ===================================================
+  // RENDER
+  // ===================================================
 
   return (
     <section className="mt-12">
 
-      {/* Header */}
+      {/* HEADER */}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 
         <div>
+
           <p className="text-sm font-bold uppercase tracking-[0.15em] text-blue-700">
             Community Feedback
           </p>
@@ -502,6 +1075,7 @@ export default function ReviewSection({
           <p className="mt-2 text-sm text-slate-500">
             Real CHUD reviews and clearly labeled external review summaries.
           </p>
+
         </div>
 
         <div className="flex items-center gap-2">
@@ -515,7 +1089,9 @@ export default function ReviewSection({
 
           <select
             id="sortReviews"
-            value={sortBy}
+            value={
+              sortBy
+            }
             onChange={(
               event
             ) =>
@@ -528,8 +1104,9 @@ export default function ReviewSection({
                   | "lowest"
               )
             }
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none"
           >
+
             <option value="newest">
               Newest
             </option>
@@ -541,38 +1118,82 @@ export default function ReviewSection({
             <option value="lowest">
               Lowest Rated
             </option>
+
           </select>
 
         </div>
 
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-slate-600">
-            Loading reviews...
+      {/* REACTION ERROR */}
+
+      {reactionError && (
+        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+
+          <p className="font-semibold text-red-800">
+            Could not update reaction
           </p>
+
+          <p className="mt-1 text-sm text-red-700">
+            {
+              reactionError
+            }
+          </p>
+
         </div>
       )}
 
-      {/* Error */}
+      {/* DELETE ERROR */}
+
+      {deleteError && (
+        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+
+          <p className="font-semibold text-red-800">
+            Could not delete review
+          </p>
+
+          <p className="mt-1 text-sm text-red-700">
+            {
+              deleteError
+            }
+          </p>
+
+        </div>
+      )}
+
+      {/* LOADING */}
+
+      {loading && (
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+
+          <p className="text-slate-600">
+            Loading reviews...
+          </p>
+
+        </div>
+      )}
+
+      {/* ERROR */}
+
       {!loading &&
         error && (
-          <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-6 shadow-sm">
+          <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-6">
 
             <p className="font-semibold text-red-800">
               Could not load reviews
             </p>
 
-            <p className="mt-2 text-sm leading-6 text-red-700">
-              {error}
+            <p className="mt-2 text-sm text-red-700">
+              {
+                error
+              }
             </p>
 
           </div>
         )}
 
-      {/* Empty */}
+      {/* EMPTY */}
+
       {!loading &&
         !error &&
         sortedReviews.length ===
@@ -588,13 +1209,14 @@ export default function ReviewSection({
             </p>
 
             <p className="mt-2 text-slate-600">
-              Be the first student to share an experience for this housing property.
+              Be the first student to share an experience for this property.
             </p>
 
           </div>
         )}
 
-      {/* Reviews */}
+      {/* REVIEWS */}
+
       {!loading &&
         !error &&
         sortedReviews.length >
@@ -605,10 +1227,22 @@ export default function ReviewSection({
               (
                 review
               ) => {
-                const avg =
+                const rating =
                   getAverageRating(
                     review
                   );
+
+                const isOwner =
+                  !review.isExternalSummary &&
+                  Boolean(
+                    currentUserId
+                  ) &&
+                  review.userId ===
+                    currentUserId;
+
+                const isReacting =
+                  reactingReviewId ===
+                  review.id;
 
                 return (
                   <article
@@ -618,22 +1252,20 @@ export default function ReviewSection({
                     className={`rounded-3xl border bg-white p-6 shadow-sm transition hover:shadow-md ${
                       review.isExternalSummary
                         ? "border-blue-200"
-                        : "border-slate-200"
+                        : isOwner
+                          ? "border-blue-300"
+                          : "border-slate-200"
                     }`}
                   >
 
-                    {/* Header */}
+                    {/* REVIEW HEADER */}
+
                     <div className="flex flex-wrap items-start justify-between gap-4">
 
                       <div className="flex items-start gap-4">
 
-                        <div
-                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold ${
-                            review.isExternalSummary
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-700">
+
                           {review.isExternalSummary
                             ? "E"
                             : review.user
@@ -641,6 +1273,7 @@ export default function ReviewSection({
                                   0
                                 )
                                 .toUpperCase()}
+
                         </div>
 
                         <div>
@@ -653,6 +1286,12 @@ export default function ReviewSection({
                               }
                             </h3>
 
+                            {isOwner && (
+                              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                Your Review
+                              </span>
+                            )}
+
                             {review.isExternalSummary && (
                               <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
                                 External Review Summary
@@ -660,18 +1299,6 @@ export default function ReviewSection({
                             )}
 
                           </div>
-
-                          {review.isExternalSummary ? (
-                            <p className="mt-1 text-xs font-medium text-slate-500">
-                              Based on{" "}
-                              {review.sourceName ||
-                                "public review sources"}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-sm text-slate-500">
-                              Verified CHUD account
-                            </p>
-                          )}
 
                           <p className="mt-1 text-sm text-slate-500">
                             {
@@ -685,7 +1312,7 @@ export default function ReviewSection({
 
                       <div className="rounded-full bg-amber-50 px-4 py-2 text-sm font-bold text-amber-700">
                         ★{" "}
-                        {avg.toFixed(
+                        {rating.toFixed(
                           1
                         )}{" "}
                         / 5
@@ -693,20 +1320,8 @@ export default function ReviewSection({
 
                     </div>
 
-                    {/* Summary notice */}
-                    {review.isExternalSummary && (
-                      <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                    {/* COMMENT */}
 
-                        <p className="text-sm leading-6 text-blue-900">
-                          This is a CHUD summary of recurring themes found in
-                          public review sources. It is not a review submitted
-                          directly by a CHUD user.
-                        </p>
-
-                      </div>
-                    )}
-
-                    {/* Comment */}
                     <div className="mt-5 rounded-2xl bg-slate-50 p-5">
 
                       <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
@@ -722,7 +1337,8 @@ export default function ReviewSection({
 
                     </div>
 
-                    {/* Recommendation */}
+                    {/* RECOMMENDATION */}
+
                     <div className="mt-4">
 
                       <span
@@ -732,14 +1348,17 @@ export default function ReviewSection({
                             : "bg-red-50 text-red-700"
                         }`}
                       >
+
                         {review.wouldRecommend
                           ? "✓ Would recommend"
                           : "✕ Would not recommend"}
+
                       </span>
 
                     </div>
 
-                    {/* Pros and cons */}
+                    {/* PROS / CONS */}
+
                     {(review.pros ||
                       review.cons) && (
                       <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -779,7 +1398,8 @@ export default function ReviewSection({
                       </div>
                     )}
 
-                    {/* Category ratings */}
+                    {/* CATEGORY RATINGS */}
+
                     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 
                       {Object.entries(
@@ -790,7 +1410,9 @@ export default function ReviewSection({
                           value,
                         ]) => (
                           <div
-                            key={key}
+                            key={
+                              key
+                            }
                             className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4"
                           >
 
@@ -822,7 +1444,8 @@ export default function ReviewSection({
 
                     </div>
 
-                    {/* Source */}
+                    {/* EXTERNAL SOURCE */}
+
                     {review.isExternalSummary &&
                       review.sourceUrl && (
                         <div className="mt-5 border-t border-slate-100 pt-5">
@@ -841,41 +1464,162 @@ export default function ReviewSection({
                         </div>
                       )}
 
-                    {/* Reactions */}
+                    {/* REACTIONS */}
+
                     {!review.isExternalSummary && (
-                      <div className="mt-6 flex items-center gap-3 border-t border-slate-100 pt-5">
+                      <div className="mt-6 border-t border-slate-100 pt-5">
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleReaction(
-                              review.id,
-                              "like"
-                            )
-                          }
-                          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                          👍{" "}
-                          {
-                            review.likes
-                          }
-                        </button>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleReaction(
-                              review.id,
-                              "dislike"
-                            )
-                          }
-                          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                          👎{" "}
-                          {
-                            review.dislikes
-                          }
-                        </button>
+                          <div className="flex items-center gap-3">
+
+                            {/* LIKE */}
+
+                            <button
+                              type="button"
+                              disabled={
+                                isReacting
+                              }
+                              onClick={() =>
+                                handleReaction(
+                                  review.id,
+                                  "like"
+                                )
+                              }
+                              className={`rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                review.userReaction ===
+                                1
+                                  ? "border-blue-300 bg-blue-100 text-blue-800"
+                                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              👍{" "}
+                              {
+                                review.likes
+                              }
+                            </button>
+
+                            {/* DISLIKE */}
+
+                            <button
+                              type="button"
+                              disabled={
+                                isReacting
+                              }
+                              onClick={() =>
+                                handleReaction(
+                                  review.id,
+                                  "dislike"
+                                )
+                              }
+                              className={`rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                review.userReaction ===
+                                -1
+                                  ? "border-red-300 bg-red-100 text-red-800"
+                                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              👎{" "}
+                              {
+                                review.dislikes
+                              }
+                            </button>
+
+                          </div>
+
+                          {/* OWNER ACTIONS */}
+
+                          {isOwner && (
+                            <div className="flex items-center gap-2">
+
+                              <Link
+                                href={`/write-review?id=${encodeURIComponent(
+                                  apartmentId
+                                )}&edit=${review.id}`}
+                                className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                              >
+                                Edit
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteError(
+                                    ""
+                                  );
+
+                                  setDeleteConfirmId(
+                                    review.id
+                                  );
+                                }}
+                                className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                              >
+                                Delete
+                              </button>
+
+                            </div>
+                          )}
+
+                        </div>
+
+                        {/* DELETE CONFIRMATION */}
+
+                        {isOwner &&
+                          deleteConfirmId ===
+                            review.id && (
+                            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-5">
+
+                              <p className="font-bold text-red-900">
+                                Delete your review?
+                              </p>
+
+                              <p className="mt-2 text-sm text-red-700">
+                                This action cannot be undone.
+                              </p>
+
+                              <div className="mt-4 flex gap-3">
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    deletingReviewId ===
+                                    review.id
+                                  }
+                                  onClick={() =>
+                                    setDeleteConfirmId(
+                                      null
+                                    )
+                                  }
+                                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                                >
+                                  Cancel
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    deletingReviewId ===
+                                    review.id
+                                  }
+                                  onClick={() =>
+                                    handleDeleteReview(
+                                      review.id
+                                    )
+                                  }
+                                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                                >
+
+                                  {deletingReviewId ===
+                                  review.id
+                                    ? "Deleting..."
+                                    : "Delete Review"}
+
+                                </button>
+
+                              </div>
+
+                            </div>
+                          )}
 
                       </div>
                     )}

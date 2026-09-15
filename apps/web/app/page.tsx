@@ -9,6 +9,8 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 
+import CompareApartments from "@/app/components/CompareApartments";
+
 import type {
   HousingItem,
 } from "@/app/lib/mapBuilding";
@@ -22,15 +24,20 @@ export default function HomePage() {
   const [loading, setLoading] =
     useState(true);
 
+  // ==================================================
+  // LOAD HOUSING
+  // ==================================================
+
   useEffect(() => {
     async function loadHousing() {
       try {
-        const response = await fetch(
-          "/api/browse-housing",
-          {
-            cache: "no-store",
-          }
-        );
+        const response =
+          await fetch(
+            "/api/browse-housing",
+            {
+              cache: "no-store",
+            }
+          );
 
         if (!response.ok) {
           throw new Error(
@@ -51,6 +58,8 @@ export default function HomePage() {
           "Home housing error:",
           error
         );
+
+        setHousing([]);
       } finally {
         setLoading(false);
       }
@@ -59,21 +68,28 @@ export default function HomePage() {
     loadHousing();
   }, []);
 
+  // ==================================================
+  // HOUSING COUNTS
+  // ==================================================
+
   const counts = useMemo(() => {
     return {
-      total: housing.length,
+      total:
+        housing.length,
 
-      onCampus: housing.filter(
-        (property) =>
-          property.campusType ===
-          "on-campus"
-      ).length,
+      onCampus:
+        housing.filter(
+          (property) =>
+            property.campusType ===
+            "on-campus"
+        ).length,
 
-      offCampus: housing.filter(
-        (property) =>
-          property.campusType ===
-          "off-campus"
-      ).length,
+      offCampus:
+        housing.filter(
+          (property) =>
+            property.campusType ===
+            "off-campus"
+        ).length,
 
       residenceHalls:
         housing.filter(
@@ -112,29 +128,50 @@ export default function HomePage() {
     };
   }, [housing]);
 
-  const topRated = useMemo(() => {
-    return [...housing]
-      .filter(
-        (property) =>
-          property.reviewCount > 0
-      )
-      .sort((a, b) => {
-        if (b.rating !== a.rating) {
-          return b.rating - a.rating;
-        }
+  // ==================================================
+  // TOP RATED
+  // ==================================================
 
-        return (
-          b.reviewCount -
-          a.reviewCount
-        );
-      })
-      .slice(0, 3);
-  }, [housing]);
+  const topRated =
+    useMemo(() => {
+      return [...housing]
+        .filter(
+          (property) =>
+            property.reviewCount >
+            0
+        )
+        .sort(
+          (a, b) => {
+            if (
+              b.rating !==
+              a.rating
+            ) {
+              return (
+                b.rating -
+                a.rating
+              );
+            }
+
+            return (
+              b.reviewCount -
+              a.reviewCount
+            );
+          }
+        )
+        .slice(0, 3);
+    }, [housing]);
+
+  // ==================================================
+  // PAGE
+  // ==================================================
 
   return (
     <main className="bg-white pt-20">
 
-      {/* HERO */}
+      {/* ==================================================
+          HERO
+      ================================================== */}
+
       <section className="relative overflow-hidden bg-slate-950">
 
         <div className="absolute inset-0">
@@ -165,12 +202,15 @@ export default function HomePage() {
             </h1>
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-200">
-              Compare on-campus and off-campus housing near
-              UT Arlington, explore locations, and learn from
-              student experiences before choosing where to live.
+              Compare on-campus and off-campus
+              housing near UT Arlington, explore
+              locations, and learn from student
+              experiences before choosing where
+              to live.
             </p>
 
             {/* SEARCH */}
+
             <div className="mt-10 max-w-4xl rounded-2xl bg-white p-3 shadow-2xl">
 
               <form
@@ -180,11 +220,15 @@ export default function HomePage() {
 
                 <div className="rounded-xl px-4 py-3">
 
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <label
+                    htmlFor="home-search"
+                    className="block text-xs font-bold uppercase tracking-wide text-slate-500"
+                  >
                     Where
                   </label>
 
                   <input
+                    id="home-search"
                     name="search"
                     placeholder="Search housing near UTA"
                     className="mt-1 w-full bg-transparent text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-400"
@@ -211,7 +255,7 @@ export default function HomePage() {
                   </p>
 
                   <p className="mt-1 text-sm font-semibold text-slate-800">
-                    On & off campus
+                    On &amp; off campus
                   </p>
 
                 </div>
@@ -226,6 +270,8 @@ export default function HomePage() {
               </form>
 
             </div>
+
+            {/* QUICK LINKS */}
 
             <div className="mt-8 flex flex-wrap gap-4">
 
@@ -258,7 +304,10 @@ export default function HomePage() {
 
       </section>
 
-      {/* CAMPUS CHOICE */}
+      {/* ==================================================
+          CAMPUS CHOICE
+      ================================================== */}
+
       <section className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
 
         <div>
@@ -272,9 +321,11 @@ export default function HomePage() {
           </h2>
 
           <p className="mt-3 max-w-2xl text-slate-600">
-            Start with campus location, then narrow your
-            search by housing type, ratings, amenities, and
-            student feedback.
+            Start with campus location,
+            then narrow your search by
+            housing type, ratings,
+            amenities, and student
+            feedback.
           </p>
 
         </div>
@@ -311,7 +362,10 @@ export default function HomePage() {
 
       </section>
 
-      {/* HOUSING TYPES */}
+      {/* ==================================================
+          HOUSING TYPES
+      ================================================== */}
+
       <section className="border-y border-slate-200 bg-slate-50">
 
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
@@ -387,7 +441,10 @@ export default function HomePage() {
 
       </section>
 
-      {/* TOP RATED */}
+      {/* ==================================================
+          TOP RATED
+      ================================================== */}
+
       <section className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -403,7 +460,8 @@ export default function HomePage() {
             </h2>
 
             <p className="mt-3 text-slate-600">
-              Housing ranked using reviews submitted through CHUD.
+              Housing ranked using reviews
+              submitted through CHUD.
             </p>
 
           </div>
@@ -420,6 +478,7 @@ export default function HomePage() {
         {loading ? (
 
           <div className="mt-8 grid gap-6 md:grid-cols-3">
+
             {[1, 2, 3].map(
               (item) => (
                 <div
@@ -428,6 +487,7 @@ export default function HomePage() {
                 />
               )
             )}
+
           </div>
 
         ) : topRated.length > 0 ? (
@@ -437,8 +497,12 @@ export default function HomePage() {
             {topRated.map(
               (property) => (
                 <TopRatedCard
-                  key={property.id}
-                  property={property}
+                  key={
+                    property.id
+                  }
+                  property={
+                    property
+                  }
                 />
               )
             )}
@@ -450,7 +514,8 @@ export default function HomePage() {
           <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 p-10 text-center">
 
             <p className="font-semibold text-slate-600">
-              Student ratings will appear here as reviews are added.
+              Student ratings will appear
+              here as reviews are added.
             </p>
 
           </div>
@@ -459,7 +524,16 @@ export default function HomePage() {
 
       </section>
 
-      {/* MAP */}
+      {/* ==================================================
+          COMPARE APARTMENTS
+      ================================================== */}
+
+      <CompareApartments />
+
+      {/* ==================================================
+          MAP
+      ================================================== */}
+
       <section className="bg-slate-50">
 
         <div className="mx-auto grid max-w-7xl gap-12 px-6 py-20 lg:grid-cols-2 lg:items-center lg:px-8">
@@ -475,9 +549,11 @@ export default function HomePage() {
             </h2>
 
             <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-              Explore where each property is located relative
-              to UT Arlington and use your current location to
-              understand what's nearby.
+              Explore where each property
+              is located relative to UT
+              Arlington and use your
+              current location to
+              understand what&apos;s nearby.
             </p>
 
             <div className="mt-7 space-y-4">
@@ -490,9 +566,13 @@ export default function HomePage() {
                 } CHUD properties on one interactive map`}
               />
 
-              <FeatureLine text="Identify on-campus and off-campus housing" />
+              <FeatureLine
+                text="Identify on-campus and off-campus housing"
+              />
 
-              <FeatureLine text="Use your current location to understand nearby options" />
+              <FeatureLine
+                text="Use your current location to understand nearby options"
+              />
 
             </div>
 
@@ -541,7 +621,10 @@ export default function HomePage() {
 
       </section>
 
-      {/* TRUST */}
+      {/* ==================================================
+          TRUST
+      ================================================== */}
+
       <section className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
 
         <div className="text-center">
@@ -555,8 +638,9 @@ export default function HomePage() {
           </h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-slate-600">
-            CHUD brings housing details, location, ratings,
-            and student experiences together in one place.
+            CHUD brings housing details,
+            location, ratings, and student
+            experiences together in one place.
           </p>
 
         </div>
@@ -585,7 +669,10 @@ export default function HomePage() {
 
       </section>
 
-      {/* CTA */}
+      {/* ==================================================
+          CTA
+      ================================================== */}
+
       <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-8">
 
         <div className="relative overflow-hidden rounded-[2rem] bg-blue-700 px-8 py-14 text-white md:px-14">
@@ -605,8 +692,9 @@ export default function HomePage() {
               </h2>
 
               <p className="mt-4 max-w-2xl text-lg leading-8 text-blue-100">
-                Share what you learned and help another student
-                choose where to live.
+                Share what you learned and
+                help another student choose
+                where to live.
               </p>
 
             </div>
@@ -627,6 +715,10 @@ export default function HomePage() {
     </main>
   );
 }
+
+// ====================================================
+// CAMPUS CARD
+// ====================================================
 
 function CampusCard({
   title,
@@ -693,6 +785,10 @@ function CampusCard({
   );
 }
 
+// ====================================================
+// HOUSING TYPE CARD
+// ====================================================
+
 function HousingTypeCard({
   icon,
   title,
@@ -727,6 +823,10 @@ function HousingTypeCard({
   );
 }
 
+// ====================================================
+// TOP RATED CARD
+// ====================================================
+
 function TopRatedCard({
   property,
 }: {
@@ -756,10 +856,12 @@ function TopRatedCard({
         />
 
         <div className="absolute left-4 top-4 rounded-full bg-white/95 px-3 py-1.5 text-xs font-extrabold text-slate-800 shadow">
+
           {property.campusType ===
           "on-campus"
             ? "🏫 On Campus"
             : "🏙️ Off Campus"}
+
         </div>
 
       </div>
@@ -781,9 +883,7 @@ function TopRatedCard({
           </span>
 
           <span className="font-extrabold text-slate-950">
-            {property.rating.toFixed(
-              1
-            )}
+            {property.rating.toFixed(1)}
           </span>
 
           <span className="text-sm text-slate-500">
@@ -805,6 +905,10 @@ function TopRatedCard({
   );
 }
 
+// ====================================================
+// FEATURE LINE
+// ====================================================
+
 function FeatureLine({
   text,
 }: {
@@ -824,6 +928,10 @@ function FeatureLine({
     </div>
   );
 }
+
+// ====================================================
+// TRUST CARD
+// ====================================================
 
 function TrustCard({
   icon,

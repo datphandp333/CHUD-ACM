@@ -1,129 +1,188 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import Image from "next/image";
 import Link from "next/link";
-import type { HousingItem } from "@/app/lib/mapBuilding";
 
-function normalizeText(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
+import type {
+  HousingItem,
+} from "@/app/lib/mapBuilding";
+
+// ====================================================
+// TYPES
+// ====================================================
+
+type DifferenceTone =
+  | "better"
+  | "neutral";
+
+type DifferenceBadgeProps = {
+  text: string;
+  tone?: DifferenceTone;
+};
+
+// ====================================================
+// HELPERS
+// ====================================================
+
+function getHousingTypeLabel(
+  type: HousingItem["housingType"]
+) {
+  switch (type) {
+    case "residence-hall":
+      return "Residence Hall";
+
+    case "uta-apartment":
+      return "UTA Apartment";
+
+    case "private-student-apartment":
+      return "Private Student Apartment";
+
+    case "student-apartment":
+      return "Student Apartment";
+
+    default:
+      return "Apartment";
+  }
 }
 
-function resolveImageSrc(apartment: HousingItem): string {
-  const rawImage = (apartment.image ?? "").trim();
-  const id = normalizeText(apartment.id);
-  const name = normalizeText(apartment.name);
+function getCampusLabel(
+  campusType: HousingItem["campusType"]
+) {
+  return campusType === "on-campus"
+    ? "On Campus"
+    : "Off Campus";
+}
 
-  const imageMap: Record<string, string> = {
-    "the-arlie": "/the-arlie1.jpg",
-    "the arlie": "/the-arlie1.jpg",
-    "campus-edge": "/campus-edge1.jpg",
-    "campus edge": "/campus-edge1.jpg",
-    "liv-plus": "/liv-plus1.jpg",
-    "liv+ arlington": "/liv-plus1.jpg",
-    "arbor-oaks": "/Arbor-Oaks1.jpg",
-    "arbor oaks": "/Arbor-Oaks1.jpg",
-    "arlington-hall": "/Arlington_Hall.png",
-    "arlington hall": "/Arlington_Hall.png",
-    "kc-hall": "/KC_Hall.png",
-    "kc hall": "/KC_Hall.png",
-    "maverick-hall": "/MavHallBlock.png",
-    "maverick hall": "/MavHallBlock.png",
-    "meadow-run": "/Meadow_Run.png",
-    "meadow run": "/Meadow_Run.png",
-    "the-lofts": "/The-Lofts.jpeg",
-    "the lofts": "/The-Lofts.jpeg",
-    "heights-on-pecan": "/Pecan1.jpeg",
-    "the heights on pecan": "/Pecan1.jpeg",
-    "timber-brook": "/Timber Brook.png",
-    "timber brook": "/Timber Brook.png",
-    "university-village": "/University_Village.png",
-    "university village": "/University_Village.png",
-    "vandergriff-hall": "/vandergriffsite.jpeg",
-    "vandergriff hall": "/vandergriffsite.jpeg",
-    "west-hall": "/West-Hall.jpg",
-    "west hall": "/West-Hall.jpg",
-  };
+function getPriceNumber(
+  price: string
+) {
+  switch (price) {
+    case "$":
+      return 1;
 
-  if (rawImage !== "") {
-    return rawImage.startsWith("/") ? rawImage : `/${rawImage}`;
+    case "$$":
+      return 2;
+
+    case "$$$":
+      return 3;
+
+    default:
+      return 0;
+  }
+}
+
+function getImage(
+  property: HousingItem
+) {
+  if (!property.image) {
+    return "/UTA-Logo.png";
   }
 
-  if (imageMap[id]) return imageMap[id];
-  if (imageMap[name]) return imageMap[name];
-
-  return "/UTA-Logo.png";
+  return property.image.startsWith("/")
+    ? property.image
+    : `/${property.image}`;
 }
 
-function normalizeHousingItem(item: Record<string, unknown>): HousingItem {
-  const categoryValue =
-    item.category === "apartment" || item.category === "residence-hall"
-      ? item.category
-      : String(item.type ?? "").toLowerCase().includes("apartment")
-      ? "apartment"
-      : "residence-hall";
-
-  return {
-    id: String(item.slug ?? item.id ?? ""),
-    name: String(item.name ?? "Unknown Housing"),
-    category: categoryValue,
-    source: String(item.source ?? "Off Campus"),
-    address: String(item.address ?? "UTA area"),
-    shortLocation: String(
-      item.shortLocation ?? item.short_location ?? item.location ?? "Near UTA"
-    ),
-    description: String(item.description ?? "No description available."),
-    image: String(item.image ?? ""),
-    priceLevel: String(item.priceLevel ?? item.price_level ?? "$$"),
-    officialFeatures: Array.isArray(item.officialFeatures)
-      ? (item.officialFeatures as string[])
-      : Array.isArray(item.official_features)
-      ? (item.official_features as string[])
-      : [],
-    tags: Array.isArray(item.tags) ? (item.tags as string[]) : [],
-    officialUrl: String(item.officialUrl ?? item.official_url ?? ""),
-    rating: Number(item.rating ?? 0),
-    reviewCount: Number(item.reviewCount ?? item.review_count ?? 0),
-    distanceFromUTA: String(
-      item.distanceFromUTA ?? item.distance_from_uta ?? "Not listed"
-    ),
-  };
-}
-
-function getPriceScore(priceLevel: string) {
-  if (priceLevel === "$") return 1;
-  if (priceLevel === "$$") return 2;
-  return 3;
-}
-
-function getDistanceNumber(distance: string) {
-  const match = distance.match(/[\d.]+/);
-  return match ? Number.parseFloat(match[0]) : 0;
-}
+// ====================================================
+// MAIN COMPONENT
+// ====================================================
 
 export default function CompareApartments() {
-  const sectionRef = useRef<HTMLDivElement | null>(null);
-  const [isVisible, setIsVisible] = useState(false);
-  const [apartments, setApartments] = useState<HousingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [
+    housing,
+    setHousing,
+  ] =
+    useState<HousingItem[]>([]);
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    error,
+    setError,
+  ] =
+    useState("");
+
+  const [
+    firstId,
+    setFirstId,
+  ] =
+    useState("");
+
+  const [
+    secondId,
+    setSecondId,
+  ] =
+    useState("");
+
+  // ==================================================
+  // LOAD HOUSING
+  // ==================================================
 
   useEffect(() => {
     async function loadHousing() {
       try {
-        const response = await fetch("/api/browse-housing", { cache: "no-store" });
-        if (!response.ok) throw new Error("Failed to load housing");
+        setLoading(true);
+        setError("");
 
-        const data = (await response.json()) as Record<string, unknown>[];
-        const normalized = data.map(normalizeHousingItem);
+        const response =
+          await fetch(
+            "/api/browse-housing",
+            {
+              cache: "no-store",
+            }
+          );
 
-        const selected = normalized.filter((item) =>
-          ["campus-edge", "the-arlie", "liv-plus"].includes(item.id)
+        if (!response.ok) {
+          throw new Error(
+            "Failed to load housing."
+          );
+        }
+
+        const data =
+          await response.json();
+
+        if (!Array.isArray(data)) {
+          throw new Error(
+            "Housing data is invalid."
+          );
+        }
+
+        setHousing(
+          data as HousingItem[]
         );
 
-        setApartments(selected);
-      } catch (error) {
-        console.error("CompareApartments error:", error);
-        setApartments([]);
+        // Automatically choose the first
+        // two different properties so the
+        // user immediately sees how the
+        // comparison works.
+        if (data.length >= 2) {
+          setFirstId(
+            String(data[0].id)
+          );
+
+          setSecondId(
+            String(data[1].id)
+          );
+        }
+      } catch (err) {
+        console.error(
+          "Compare housing error:",
+          err
+        );
+
+        setError(
+          "Unable to load housing comparison."
+        );
       } finally {
         setLoading(false);
       }
@@ -132,228 +191,1017 @@ export default function CompareApartments() {
     loadHousing();
   }, []);
 
-  useEffect(() => {
-    const currentRef = sectionRef.current;
-    if (!currentRef) return;
+  // ==================================================
+  // SELECTED PROPERTIES
+  // ==================================================
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.unobserve(currentRef);
-        }
-      },
-      { threshold: 0.2 }
+  const firstProperty =
+    useMemo(
+      () =>
+        housing.find(
+          (property) =>
+            property.id ===
+            firstId
+        ) ?? null,
+      [
+        housing,
+        firstId,
+      ]
     );
 
-    observer.observe(currentRef);
+  const secondProperty =
+    useMemo(
+      () =>
+        housing.find(
+          (property) =>
+            property.id ===
+            secondId
+        ) ?? null,
+      [
+        housing,
+        secondId,
+      ]
+    );
 
-    return () => observer.disconnect();
-  }, [loading]);
+  const sameProperty =
+    firstId !== "" &&
+    secondId !== "" &&
+    firstId === secondId;
+
+  // ==================================================
+  // LOADING
+  // ==================================================
 
   if (loading) {
     return (
-      <section className="mx-auto max-w-7xl px-6 py-20">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-600 shadow-sm">
-          Loading apartment comparison...
+      <section className="border-y border-slate-200 bg-slate-50">
+        <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-10 shadow-sm">
+
+            <div className="h-4 w-36 animate-pulse rounded bg-slate-200" />
+
+            <div className="mt-5 h-10 max-w-xl animate-pulse rounded bg-slate-200" />
+
+            <div className="mt-10 grid gap-5 md:grid-cols-2">
+
+              <div className="h-16 animate-pulse rounded-2xl bg-slate-100" />
+
+              <div className="h-16 animate-pulse rounded-2xl bg-slate-100" />
+
+            </div>
+
+          </div>
+
         </div>
       </section>
     );
   }
 
-  if (apartments.length === 0) {
+  // ==================================================
+  // ERROR
+  // ==================================================
+
+  if (error) {
     return (
-      <section className="mx-auto max-w-7xl px-6 py-20">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-600 shadow-sm">
-          No apartment comparison data available right now.
+      <section className="border-y border-slate-200 bg-slate-50">
+        <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-8 text-red-700">
+            {error}
+          </div>
+
         </div>
       </section>
     );
   }
 
-  if (loading) {
-    return (
-      <section className="mx-auto max-w-7xl px-6 py-20">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-600 shadow-sm">
-          Loading apartment comparison...
-        </div>
-      </section>
-    );
-  }
-
-  if (apartments.length === 0) {
-    return (
-      <section className="mx-auto max-w-7xl px-6 py-20">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-slate-600 shadow-sm">
-          No apartment comparison data available right now.
-        </div>
-      </section>
-    );
-  }
-
-  const maxRating = 5;
-  const maxReviews = Math.max(...apartments.map((apt) => apt.reviewCount), 1);
-  const maxDistance = Math.max(
-    ...apartments.map((apt) => getDistanceNumber(apt.distanceFromUTA)),
-    1
-  );
+  // ==================================================
+  // UI
+  // ==================================================
 
   return (
-    <section ref={sectionRef} className="mx-auto max-w-7xl px-6 py-20">
-      <div className="mb-12 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-700">
-          Compare Apartments
-        </p>
-        <h2 className="mt-3 text-4xl font-bold text-blue-900 md:text-5xl">
-          Compare Housing Options Near UTA
-        </h2>
-        <p className="mx-auto mt-4 max-w-3xl text-slate-600">
-          Compare rating, review count, price level, and distance from campus to
-          see which apartment fits you best.
-        </p>
-      </div>
+    <section className="border-y border-slate-200 bg-slate-50">
 
-      <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="min-w-[950px] space-y-8">
-          {apartments.map((apartment) => {
-            const ratingWidth = (apartment.rating / maxRating) * 100;
-            const reviewWidth = (apartment.reviewCount / maxReviews) * 100;
-            const distanceValue = getDistanceNumber(apartment.distanceFromUTA);
-            const distanceWidth = (distanceValue / maxDistance) * 100;
-            const priceScore = getPriceScore(apartment.priceLevel);
-            const priceWidth = (priceScore / 3) * 100;
-            const imageSrc = resolveImageSrc(apartment);
+      <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
 
-            return (
-              <article
-                key={apartment.id}
-                className="group rounded-3xl border border-slate-200 bg-slate-50 p-6 transition duration-300 hover:-translate-y-1 hover:shadow-lg"
-              >
-                <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="relative h-20 w-20 overflow-hidden rounded-2xl shadow-sm">
-                      <Image
-                        src={imageSrc}
-                        alt={apartment.name}
-                        fill
-                        className="object-cover transition duration-500 group-hover:scale-110"
-                        sizes="80px"
-                      />
-                    </div>
+        {/* ============================================
+            HEADER
+        ============================================ */}
 
-                    <div>
-                      <h3 className="text-2xl font-bold text-blue-900 transition duration-300 group-hover:text-blue-700">
-                        {apartment.name}
-                      </h3>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {apartment.address}
-                      </p>
-                    </div>
-                  </div>
+        <div className="mx-auto max-w-3xl text-center">
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">
-                      {apartment.priceLevel}
-                    </span>
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-700">
+            Compare housing
+          </p>
 
-                    <span className="rounded-full bg-white px-3 py-1 text-sm text-slate-600 shadow-sm">
-                      {apartment.distanceFromUTA}
-                    </span>
-                  </div>
-                </div>
+          <h2 className="mt-3 text-4xl font-extrabold tracking-tight text-slate-950 md:text-5xl">
+            Compare two places side by side.
+          </h2>
 
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-slate-700">Rating</span>
-                      <span className="font-semibold text-slate-600">
-                        {apartment.rating.toFixed(1)} / 5
-                      </span>
-                    </div>
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-4 rounded-full bg-blue-600 transition-all duration-1000 ease-out"
-                        style={{ width: isVisible ? `${ratingWidth}%` : "0%" }}
-                      />
-                    </div>
-                  </div>
+          <p className="mt-5 text-lg leading-8 text-slate-600">
+            Choose two housing options to quickly compare
+            price, location, ratings, housing type, and
+            amenities.
+          </p>
 
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-slate-700">
-                        Review Count
-                      </span>
-                      <span className="font-semibold text-slate-600">
-                        {apartment.reviewCount}
-                      </span>
-                    </div>
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-4 rounded-full bg-sky-500 transition-all duration-1000 ease-out"
-                        style={{ width: isVisible ? `${reviewWidth}%` : "0%" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-slate-700">
-                        Price Level
-                      </span>
-                      <span className="font-semibold text-slate-600">
-                        {apartment.priceLevel}
-                      </span>
-                    </div>
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-4 rounded-full bg-indigo-500 transition-all duration-1000 ease-out"
-                        style={{ width: isVisible ? `${priceWidth}%` : "0%" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-slate-700">
-                        Distance from UTA
-                      </span>
-                      <span className="font-semibold text-slate-600">
-                        {apartment.distanceFromUTA}
-                      </span>
-                    </div>
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-4 rounded-full bg-emerald-500 transition-all duration-1000 ease-out"
-                        style={{ width: isVisible ? `${distanceWidth}%` : "0%" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {apartment.tags.map((tag: string) => (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm transition duration-300 group-hover:bg-slate-100"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="mt-6">
-                  <Link
-                    href={`/housing/${apartment.id}`}
-                    className="inline-flex items-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-blue-700"
-                  >
-                    View Details
-                  </Link>
-                </div>
-              </article>
-            );
-          })}
         </div>
+
+        {/* ============================================
+            SELECTORS
+        ============================================ */}
+
+        <div className="mx-auto mt-10 max-w-5xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+
+          <div className="grid gap-6 md:grid-cols-[1fr_auto_1fr] md:items-end">
+
+            {/* PROPERTY A */}
+
+            <div>
+
+              <label
+                htmlFor="property-a"
+                className="text-sm font-bold text-slate-800"
+              >
+                Property A
+              </label>
+
+              <select
+                id="property-a"
+                value={firstId}
+                onChange={(event) =>
+                  setFirstId(
+                    event.target.value
+                  )
+                }
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 font-semibold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+              >
+
+                {housing.map(
+                  (property) => (
+                    <option
+                      key={
+                        property.id
+                      }
+                      value={
+                        property.id
+                      }
+                    >
+                      {
+                        property.name
+                      }
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </div>
+
+            {/* VS */}
+
+            <div className="hidden pb-3 text-center md:block">
+
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-extrabold text-slate-500">
+                VS
+              </div>
+
+            </div>
+
+            {/* PROPERTY B */}
+
+            <div>
+
+              <label
+                htmlFor="property-b"
+                className="text-sm font-bold text-slate-800"
+              >
+                Property B
+              </label>
+
+              <select
+                id="property-b"
+                value={secondId}
+                onChange={(event) =>
+                  setSecondId(
+                    event.target.value
+                  )
+                }
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 font-semibold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+              >
+
+                {housing.map(
+                  (property) => (
+                    <option
+                      key={
+                        property.id
+                      }
+                      value={
+                        property.id
+                      }
+                    >
+                      {
+                        property.name
+                      }
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </div>
+
+          </div>
+
+          {sameProperty && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Choose two different properties to compare.
+            </div>
+          )}
+
+        </div>
+
+        {/* ============================================
+            COMPARISON
+        ============================================ */}
+
+        {!sameProperty &&
+          firstProperty &&
+          secondProperty && (
+            <Comparison
+              first={
+                firstProperty
+              }
+              second={
+                secondProperty
+              }
+            />
+          )}
+
       </div>
+
     </section>
+  );
+}
+
+// ====================================================
+// COMPARISON
+// ====================================================
+
+function Comparison({
+  first,
+  second,
+}: {
+  first: HousingItem;
+  second: HousingItem;
+}) {
+  const firstPrice =
+    getPriceNumber(
+      first.priceLevel
+    );
+
+  const secondPrice =
+    getPriceNumber(
+      second.priceLevel
+    );
+
+  const firstRatingBetter =
+    first.rating >
+    second.rating;
+
+  const secondRatingBetter =
+    second.rating >
+    first.rating;
+
+  const firstPriceLower =
+    firstPrice > 0 &&
+    secondPrice > 0 &&
+    firstPrice <
+      secondPrice;
+
+  const secondPriceLower =
+    firstPrice > 0 &&
+    secondPrice > 0 &&
+    secondPrice <
+      firstPrice;
+
+  return (
+    <div className="mx-auto mt-8 max-w-6xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+
+      {/* ============================================
+          PROPERTY HEADERS
+      ============================================ */}
+
+      <div className="grid grid-cols-[130px_1fr_1fr] border-b border-slate-200 md:grid-cols-[200px_1fr_1fr]">
+
+        <div className="hidden p-5 md:block" />
+
+        <PropertyHeader
+          property={first}
+        />
+
+        <PropertyHeader
+          property={second}
+        />
+
+      </div>
+
+      {/* ============================================
+          QUICK FACTS
+      ============================================ */}
+
+      <SectionTitle title="Quick facts" />
+
+      <ComparisonRow
+        label="Overall rating"
+        first={
+          <RatingValue
+            rating={
+              first.rating
+            }
+            reviews={
+              first.reviewCount
+            }
+            highlighted={
+              firstRatingBetter
+            }
+          />
+        }
+        second={
+          <RatingValue
+            rating={
+              second.rating
+            }
+            reviews={
+              second.reviewCount
+            }
+            highlighted={
+              secondRatingBetter
+            }
+          />
+        }
+      />
+
+      <ComparisonRow
+        label="Price level"
+        first={
+          <Value
+            value={
+              first.priceLevel
+            }
+            highlighted={
+              firstPriceLower
+            }
+            badge={
+              firstPriceLower
+                ? "Lower price level"
+                : undefined
+            }
+          />
+        }
+        second={
+          <Value
+            value={
+              second.priceLevel
+            }
+            highlighted={
+              secondPriceLower
+            }
+            badge={
+              secondPriceLower
+                ? "Lower price level"
+                : undefined
+            }
+          />
+        }
+      />
+
+      <ComparisonRow
+        label="Distance from UTA"
+        first={
+          <Value
+            value={
+              first.distanceFromUTA
+            }
+          />
+        }
+        second={
+          <Value
+            value={
+              second.distanceFromUTA
+            }
+          />
+        }
+      />
+
+      <ComparisonRow
+        label="Campus"
+        first={
+          <Value
+            value={getCampusLabel(
+              first.campusType
+            )}
+          />
+        }
+        second={
+          <Value
+            value={getCampusLabel(
+              second.campusType
+            )}
+          />
+        }
+      />
+
+      <ComparisonRow
+        label="Housing type"
+        first={
+          <Value
+            value={getHousingTypeLabel(
+              first.housingType
+            )}
+          />
+        }
+        second={
+          <Value
+            value={getHousingTypeLabel(
+              second.housingType
+            )}
+          />
+        }
+      />
+
+      <ComparisonRow
+        label="Student focused"
+        first={
+          <YesNo
+            value={
+              first.studentFocused
+            }
+          />
+        }
+        second={
+          <YesNo
+            value={
+              second.studentFocused
+            }
+          />
+        }
+      />
+
+      {/* ============================================
+          FEATURES
+      ============================================ */}
+
+      <SectionTitle title="Amenities & features" />
+
+      <FeatureComparison
+        first={first}
+        second={second}
+      />
+
+      {/* ============================================
+          SUMMARY
+      ============================================ */}
+
+      <SectionTitle title="Key differences" />
+
+      <div className="grid gap-0 md:grid-cols-[200px_1fr_1fr]">
+
+        <div className="hidden border-r border-slate-200 p-6 md:block">
+
+          <p className="text-sm font-bold text-slate-700">
+            Highlights
+          </p>
+
+        </div>
+
+        <DifferenceSummary
+          property={first}
+          other={second}
+        />
+
+        <DifferenceSummary
+          property={second}
+          other={first}
+          right
+        />
+
+      </div>
+
+    </div>
+  );
+}
+
+// ====================================================
+// PROPERTY HEADER
+// ====================================================
+
+function PropertyHeader({
+  property,
+}: {
+  property: HousingItem;
+}) {
+  return (
+    <div className="border-l border-slate-200 p-4 sm:p-6">
+
+      <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-slate-100">
+
+        <Image
+          src={getImage(
+            property
+          )}
+          alt={
+            property.name
+          }
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 50vw, 400px"
+        />
+
+      </div>
+
+      <div className="mt-4">
+
+        <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+          {getCampusLabel(
+            property.campusType
+          )}
+        </p>
+
+        <h3 className="mt-1 text-lg font-extrabold text-slate-950 sm:text-xl">
+          {property.name}
+        </h3>
+
+        <p className="mt-2 hidden text-sm leading-6 text-slate-500 sm:block">
+          {property.shortLocation}
+        </p>
+
+        <Link
+          href={`/housing/${property.id}`}
+          className="mt-4 inline-flex text-sm font-bold text-blue-700 hover:text-blue-900"
+        >
+          View details →
+        </Link>
+
+      </div>
+
+    </div>
+  );
+}
+
+// ====================================================
+// SECTION TITLE
+// ====================================================
+
+function SectionTitle({
+  title,
+}: {
+  title: string;
+}) {
+  return (
+    <div className="border-y border-slate-200 bg-slate-50 px-5 py-3">
+
+      <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500">
+        {title}
+      </p>
+
+    </div>
+  );
+}
+
+// ====================================================
+// COMPARISON ROW
+// ====================================================
+
+function ComparisonRow({
+  label,
+  first,
+  second,
+}: {
+  label: string;
+  first: React.ReactNode;
+  second: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[130px_1fr_1fr] border-b border-slate-200 md:grid-cols-[200px_1fr_1fr]">
+
+      <div className="flex items-center p-4 md:p-5">
+
+        <p className="text-xs font-bold text-slate-600 sm:text-sm">
+          {label}
+        </p>
+
+      </div>
+
+      <div className="flex items-center border-l border-slate-200 p-4 md:p-5">
+        {first}
+      </div>
+
+      <div className="flex items-center border-l border-slate-200 p-4 md:p-5">
+        {second}
+      </div>
+
+    </div>
+  );
+}
+
+// ====================================================
+// VALUE
+// ====================================================
+
+function Value({
+  value,
+  highlighted = false,
+  badge,
+}: {
+  value: string;
+  highlighted?: boolean;
+  badge?: string;
+}) {
+  return (
+    <div>
+
+      <p
+        className={
+          highlighted
+            ? "font-extrabold text-emerald-700"
+            : "font-semibold text-slate-800"
+        }
+      >
+        {value}
+      </p>
+
+      {badge && (
+        <DifferenceBadge
+          text={badge}
+        />
+      )}
+
+    </div>
+  );
+}
+
+// ====================================================
+// RATING
+// ====================================================
+
+function RatingValue({
+  rating,
+  reviews,
+  highlighted,
+}: {
+  rating: number;
+  reviews: number;
+  highlighted: boolean;
+}) {
+  if (reviews === 0) {
+    return (
+      <div>
+
+        <p className="font-semibold text-slate-500">
+          Not rated yet
+        </p>
+
+        <p className="mt-1 text-xs text-slate-400">
+          0 reviews
+        </p>
+
+      </div>
+    );
+  }
+
+  return (
+    <div>
+
+      <div className="flex items-center gap-1">
+
+        <span className="text-amber-400">
+          ★
+        </span>
+
+        <span
+          className={
+            highlighted
+              ? "font-extrabold text-emerald-700"
+              : "font-extrabold text-slate-900"
+          }
+        >
+          {rating.toFixed(
+            1
+          )}
+        </span>
+
+      </div>
+
+      <p className="mt-1 text-xs text-slate-500">
+        {reviews}{" "}
+        {reviews === 1
+          ? "review"
+          : "reviews"}
+      </p>
+
+      {highlighted && (
+        <DifferenceBadge
+          text="Higher rating"
+        />
+      )}
+
+    </div>
+  );
+}
+
+// ====================================================
+// YES / NO
+// ====================================================
+
+function YesNo({
+  value,
+}: {
+  value: boolean;
+}) {
+  return value ? (
+    <span className="inline-flex items-center gap-2 font-semibold text-emerald-700">
+
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-xs">
+        ✓
+      </span>
+
+      Yes
+
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-2 font-semibold text-slate-500">
+
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs">
+        —
+      </span>
+
+      No
+
+    </span>
+  );
+}
+
+// ====================================================
+// FEATURE COMPARISON
+// ====================================================
+
+function FeatureComparison({
+  first,
+  second,
+}: {
+  first: HousingItem;
+  second: HousingItem;
+}) {
+  const allFeatures =
+    Array.from(
+      new Set([
+        ...first.officialFeatures,
+        ...second.officialFeatures,
+      ])
+    );
+
+  if (
+    allFeatures.length === 0
+  ) {
+    return (
+      <div className="p-6 text-sm text-slate-500">
+        No amenity information available.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {allFeatures.map(
+        (feature) => {
+          const firstHas =
+            first.officialFeatures.includes(
+              feature
+            );
+
+          const secondHas =
+            second.officialFeatures.includes(
+              feature
+            );
+
+          return (
+            <ComparisonRow
+              key={feature}
+              label={feature}
+              first={
+                <FeatureStatus
+                  value={
+                    firstHas
+                  }
+                  unique={
+                    firstHas &&
+                    !secondHas
+                  }
+                />
+              }
+              second={
+                <FeatureStatus
+                  value={
+                    secondHas
+                  }
+                  unique={
+                    secondHas &&
+                    !firstHas
+                  }
+                />
+              }
+            />
+          );
+        }
+      )}
+    </>
+  );
+}
+
+// ====================================================
+// FEATURE STATUS
+// ====================================================
+
+function FeatureStatus({
+  value,
+  unique,
+}: {
+  value: boolean;
+  unique: boolean;
+}) {
+  if (!value) {
+    return (
+      <span
+        aria-label="Not listed"
+        className="text-lg font-bold text-slate-300"
+      >
+        —
+      </span>
+    );
+  }
+
+  return (
+    <div>
+
+      <span
+        aria-label="Available"
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-700"
+      >
+        ✓
+      </span>
+
+      {unique && (
+        <DifferenceBadge
+          text="Only here"
+        />
+      )}
+
+    </div>
+  );
+}
+
+// ====================================================
+// DIFFERENCE SUMMARY
+// ====================================================
+
+function DifferenceSummary({
+  property,
+  other,
+  right = false,
+}: {
+  property: HousingItem;
+  other: HousingItem;
+  right?: boolean;
+}) {
+  const differences:
+    string[] = [];
+
+  const propertyPrice =
+    getPriceNumber(
+      property.priceLevel
+    );
+
+  const otherPrice =
+    getPriceNumber(
+      other.priceLevel
+    );
+
+  if (
+    propertyPrice > 0 &&
+    otherPrice > 0 &&
+    propertyPrice <
+      otherPrice
+  ) {
+    differences.push(
+      "Lower general price level"
+    );
+  }
+
+  if (
+    property.reviewCount > 0 &&
+    other.reviewCount > 0 &&
+    property.rating >
+      other.rating
+  ) {
+    differences.push(
+      `${(
+        property.rating -
+        other.rating
+      ).toFixed(
+        1
+      )} higher overall rating`
+    );
+  }
+
+  if (
+    property.studentFocused &&
+    !other.studentFocused
+  ) {
+    differences.push(
+      "Student-focused housing"
+    );
+  }
+
+  const uniqueFeatures =
+    property.officialFeatures.filter(
+      (feature) =>
+        !other.officialFeatures.includes(
+          feature
+        )
+    );
+
+  uniqueFeatures
+    .slice(0, 3)
+    .forEach(
+      (feature) => {
+        differences.push(
+          `Offers ${feature}`
+        );
+      }
+    );
+
+  return (
+    <div
+      className={`p-5 md:p-6 ${
+        right
+          ? "border-l border-slate-200"
+          : "border-l border-slate-200"
+      }`}
+    >
+
+      <p className="font-extrabold text-slate-950">
+        {property.name}
+      </p>
+
+      {differences.length >
+      0 ? (
+        <ul className="mt-4 space-y-3">
+
+          {differences.map(
+            (
+              difference,
+              index
+            ) => (
+              <li
+                key={`${difference}-${index}`}
+                className="flex gap-2 text-sm leading-6 text-slate-600"
+              >
+
+                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-700">
+                  ✓
+                </span>
+
+                <span>
+                  {difference}
+                </span>
+
+              </li>
+            )
+          )}
+
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          No major differences identified
+          from the currently available data.
+        </p>
+      )}
+
+    </div>
+  );
+}
+
+// ====================================================
+// DIFFERENCE BADGE
+// ====================================================
+
+function DifferenceBadge({
+  text,
+}: DifferenceBadgeProps) {
+  return (
+    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">
+      {text}
+    </span>
   );
 }

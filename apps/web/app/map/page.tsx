@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useEffect,
   useMemo,
   useState,
@@ -74,27 +75,29 @@ type UserLocation = {
   longitude: number;
 };
 
+// =====================================================
+// NORMALIZE HOUSING DATA
+// =====================================================
+
 function normalizeBuilding(
   item: Record<string, unknown>
 ): Building {
-  const rawCampusType =
-    String(
-      item.campusType ??
-        item.campus_type ??
-        ""
-    );
+  const rawCampusType = String(
+    item.campusType ??
+      item.campus_type ??
+      ""
+  );
 
   const campusType: CampusType =
     rawCampusType === "on-campus"
       ? "on-campus"
       : "off-campus";
 
-  const rawHousingType =
-    String(
-      item.housingType ??
-        item.housing_type ??
-        ""
-    );
+  const rawHousingType = String(
+    item.housingType ??
+      item.housing_type ??
+      ""
+  );
 
   let housingType: HousingType;
 
@@ -125,71 +128,59 @@ function normalizeBuilding(
       break;
 
     default: {
-      const category =
-        String(
-          item.category ??
-            ""
-        ).toLowerCase();
+      const category = String(
+        item.category ?? ""
+      ).toLowerCase();
 
       housingType =
-        category.includes(
-          "residence"
-        )
+        category.includes("residence")
           ? "residence-hall"
           : "apartment";
     }
   }
 
-  const id =
-    String(
-      item.id ??
-        item.slug ??
-        ""
-    );
-
-  const slug =
-    String(
+  const id = String(
+    item.id ??
       item.slug ??
-        item.id ??
-        ""
-    );
+      ""
+  );
+
+  const slug = String(
+    item.slug ??
+      item.id ??
+      ""
+  );
 
   return {
     id,
     slug,
 
-    name:
-      String(
-        item.name ??
-          "Unknown Housing"
-      ),
+    name: String(
+      item.name ??
+        "Unknown Housing"
+    ),
 
     category:
-      housingType ===
-      "residence-hall"
+      housingType === "residence-hall"
         ? "residence-hall"
         : "apartment",
 
-    source:
-      String(
-        item.source ??
-          (campusType ===
-          "on-campus"
-            ? "UTA"
-            : "Off Campus")
-      ),
+    source: String(
+      item.source ??
+        (campusType === "on-campus"
+          ? "UTA"
+          : "Off Campus")
+    ),
 
     campusType,
     housingType,
 
-    ownership:
-      String(
-        item.ownership ??
-          (campusType ===
-          "on-campus"
-            ? "UTA"
-            : "Private")
-      ),
+    ownership: String(
+      item.ownership ??
+        (campusType === "on-campus"
+          ? "UTA"
+          : "Private")
+    ),
 
     studentFocused:
       typeof item.studentFocused ===
@@ -198,41 +189,32 @@ function normalizeBuilding(
         : typeof item.student_focused ===
           "boolean"
         ? item.student_focused
-        : housingType !==
-          "apartment",
+        : housingType !== "apartment",
 
-    address:
-      String(
-        item.address ??
-          ""
-      ),
+    address: String(
+      item.address ?? ""
+    ),
 
-    shortLocation:
-      String(
-        item.shortLocation ??
-          item.short_location ??
-          item.location ??
-          "Near UTA"
-      ),
+    shortLocation: String(
+      item.shortLocation ??
+        item.short_location ??
+        item.location ??
+        "Near UTA"
+    ),
 
-    description:
-      String(
-        item.description ??
-          ""
-      ),
+    description: String(
+      item.description ?? ""
+    ),
 
-    image:
-      String(
-        item.image ??
-          ""
-      ),
+    image: String(
+      item.image ?? ""
+    ),
 
-    priceLevel:
-      String(
-        item.priceLevel ??
-          item.price_level ??
-          "$$"
-      ),
+    priceLevel: String(
+      item.priceLevel ??
+        item.price_level ??
+        "$$"
+    ),
 
     officialFeatures:
       Array.isArray(
@@ -246,54 +228,47 @@ function normalizeBuilding(
         : [],
 
     tags:
-      Array.isArray(
-        item.tags
-      )
+      Array.isArray(item.tags)
         ? (item.tags as string[])
         : [],
 
-    officialUrl:
-      String(
-        item.officialUrl ??
-          item.official_url ??
-          ""
-      ),
+    officialUrl: String(
+      item.officialUrl ??
+        item.official_url ??
+        ""
+    ),
 
-    rating:
-      Number(
-        item.rating ??
-          0
-      ),
+    rating: Number(
+      item.rating ?? 0
+    ),
 
-    reviewCount:
-      Number(
-        item.reviewCount ??
-          item.review_count ??
-          0
-      ),
+    reviewCount: Number(
+      item.reviewCount ??
+        item.review_count ??
+        0
+    ),
 
-    distanceFromUTA:
-      String(
-        item.distanceFromUTA ??
-          item.distance_from_uta ??
-          "Near UTA"
-      ),
+    distanceFromUTA: String(
+      item.distanceFromUTA ??
+        item.distance_from_uta ??
+        "Near UTA"
+    ),
 
     latitude:
       item.latitude == null
         ? null
-        : Number(
-            item.latitude
-          ),
+        : Number(item.latitude),
 
     longitude:
       item.longitude == null
         ? null
-        : Number(
-            item.longitude
-          ),
+        : Number(item.longitude),
   };
 }
+
+// =====================================================
+// IMAGE
+// =====================================================
 
 function resolveImageSrc(
   building: Building
@@ -302,12 +277,14 @@ function resolveImageSrc(
     return "/UTA-Logo.png";
   }
 
-  return building.image.startsWith(
-    "/"
-  )
+  return building.image.startsWith("/")
     ? building.image
     : `/${building.image}`;
 }
+
+// =====================================================
+// HOUSING TYPE LABEL
+// =====================================================
 
 function housingTypeLabel(
   type: HousingType
@@ -333,30 +310,38 @@ function housingTypeLabel(
   }
 }
 
+// =====================================================
+// MAP PAGE
+// =====================================================
+
 export default function MapPage() {
+  return (
+    <Suspense fallback={<MapLoading />}>
+      <MapContent />
+    </Suspense>
+  );
+}
+
+// =====================================================
+// MAP CONTENT
+// =====================================================
+
+function MapContent() {
   const searchParams =
     useSearchParams();
 
   const initialHousing =
-    searchParams.get(
-      "housing"
-    ) ?? "";
+    searchParams.get("housing") ?? "";
 
   const [
     buildings,
     setBuildings,
-  ] =
-    useState<Building[]>(
-      []
-    );
+  ] = useState<Building[]>([]);
 
   const [
     selectedSlug,
     setSelectedSlug,
-  ] =
-    useState(
-      initialHousing
-    );
+  ] = useState(initialHousing);
 
   const [
     userLocation,
@@ -370,9 +355,7 @@ export default function MapPage() {
     campusFilter,
     setCampusFilter,
   ] =
-    useState<CampusFilter>(
-      "all"
-    );
+    useState<CampusFilter>("all");
 
   const [
     housingTypeFilter,
@@ -385,20 +368,17 @@ export default function MapPage() {
   const [
     search,
     setSearch,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     loading,
     setLoading,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const [
     error,
     setError,
-  ] =
-    useState("");
+  ] = useState("");
 
   // =====================================================
   // LOAD HOUSING
@@ -414,17 +394,14 @@ export default function MapPage() {
           await fetch(
             "/api/browse-housing",
             {
-              cache:
-                "no-store",
+              cache: "no-store",
             }
           );
 
         const result =
           await response
             .json()
-            .catch(
-              () => null
-            );
+            .catch(() => null);
 
         if (!response.ok) {
           throw new Error(
@@ -441,13 +418,10 @@ export default function MapPage() {
               )
             : [];
 
-        setBuildings(
-          normalized
-        );
+        setBuildings(normalized);
 
         if (
-          normalized.length >
-          0
+          normalized.length > 0
         ) {
           const requestedBuilding =
             initialHousing
@@ -491,8 +465,7 @@ export default function MapPage() {
   const counts =
     useMemo(() => {
       return {
-        all:
-          buildings.length,
+        all: buildings.length,
 
         onCampus:
           buildings.filter(
@@ -556,8 +529,7 @@ export default function MapPage() {
       ];
 
       if (
-        campusFilter !==
-        "all"
+        campusFilter !== "all"
       ) {
         result =
           result.filter(
@@ -600,9 +572,7 @@ export default function MapPage() {
               ]
                 .join(" ")
                 .toLowerCase()
-                .includes(
-                  query
-                )
+                .includes(query)
           );
       }
 
@@ -615,7 +585,7 @@ export default function MapPage() {
     ]);
 
   // =====================================================
-  // ONLY PROPERTIES WITH COORDINATES GO TO MAPBOX
+  // MAP BUILDINGS
   // =====================================================
 
   const mapBuildings =
@@ -637,15 +607,9 @@ export default function MapPage() {
           )
           .map(
             (building) => ({
-              id:
-                building.id,
-
-              slug:
-                building.slug,
-
-              name:
-                building.name,
-
+              id: building.id,
+              slug: building.slug,
+              name: building.name,
               address:
                 building.address,
 
@@ -700,14 +664,12 @@ export default function MapPage() {
     );
 
   // =====================================================
-  // GOOGLE MAPS DIRECTIONS
+  // GOOGLE DIRECTIONS
   // =====================================================
 
   const googleDirectionsUrl =
     useMemo(() => {
-      if (
-        !selectedBuilding
-      ) {
+      if (!selectedBuilding) {
         return "";
       }
 
@@ -754,9 +716,7 @@ export default function MapPage() {
   function selectCampus(
     value: CampusFilter
   ) {
-    setCampusFilter(
-      value
-    );
+    setCampusFilter(value);
 
     setHousingTypeFilter(
       "all"
@@ -787,8 +747,7 @@ export default function MapPage() {
 
     if (value === "all") {
       const first =
-        campusFilter ===
-        "all"
+        campusFilter === "all"
           ? buildings[0]
           : buildings.find(
               (building) =>
@@ -823,12 +782,14 @@ export default function MapPage() {
     }
   }
 
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <main className="min-h-screen bg-slate-50 pt-24">
 
-      {/* ============================================
-          HEADER
-      ============================================ */}
+      {/* HEADER */}
 
       <section className="border-b border-slate-200 bg-white">
 
@@ -856,9 +817,7 @@ export default function MapPage() {
               <div className="mt-7 flex flex-wrap gap-3">
 
                 <StatPill
-                  value={
-                    counts.all
-                  }
+                  value={counts.all}
                   label="Properties"
                 />
 
@@ -877,9 +836,7 @@ export default function MapPage() {
                 />
 
                 <StatPill
-                  value={
-                    totalMapped
-                  }
+                  value={totalMapped}
                   label="Mapped"
                 />
 
@@ -890,9 +847,7 @@ export default function MapPage() {
 
       </section>
 
-      {/* ============================================
-          FILTERS
-      ============================================ */}
+      {/* FILTERS */}
 
       {!loading &&
         !error && (
@@ -908,9 +863,7 @@ export default function MapPage() {
                     "all"
                   }
                   onClick={() =>
-                    selectCampus(
-                      "all"
-                    )
+                    selectCampus("all")
                   }
                   label={`All Housing ${counts.all}`}
                 />
@@ -942,8 +895,6 @@ export default function MapPage() {
                 />
 
               </div>
-
-              {/* ON CAMPUS SUBFILTERS */}
 
               {campusFilter ===
                 "on-campus" && (
@@ -1004,8 +955,6 @@ export default function MapPage() {
                 </div>
               )}
 
-              {/* OFF CAMPUS SUBFILTERS */}
-
               {campusFilter ===
                 "off-campus" && (
                 <div className="mt-4 flex gap-2 overflow-x-auto border-t border-slate-100 pt-4">
@@ -1057,9 +1006,7 @@ export default function MapPage() {
           </section>
         )}
 
-      {/* ============================================
-          MAIN CONTENT
-      ============================================ */}
+      {/* MAIN CONTENT */}
 
       <section className="mx-auto max-w-[1500px] px-5 py-8 lg:px-8">
 
@@ -1084,9 +1031,7 @@ export default function MapPage() {
           !error && (
             <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
 
-              {/* ==================================
-                  SIDEBAR
-              ================================== */}
+              {/* SIDEBAR */}
 
               <aside className="order-2 xl:order-1">
 
@@ -1103,17 +1048,13 @@ export default function MapPage() {
                         </h2>
 
                         <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Select a property to
-                          focus the map.
+                          Select a property to focus the map.
                         </p>
 
                       </div>
 
                       <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
-                        {
-                          filteredBuildings.length
-                        }{" "}
-                        shown
+                        {filteredBuildings.length} shown
                       </span>
 
                     </div>
@@ -1128,15 +1069,12 @@ export default function MapPage() {
 
                       <input
                         type="search"
-                        value={
-                          search
-                        }
+                        value={search}
                         onChange={(
                           event
                         ) =>
                           setSearch(
-                            event
-                              .target
+                            event.target
                               .value
                           )
                         }
@@ -1149,17 +1087,11 @@ export default function MapPage() {
                     <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3">
 
                       <p className="text-sm font-semibold text-blue-800">
-                        {
-                          filteredBuildings.length
-                        }{" "}
-                        housing options
+                        {filteredBuildings.length} housing options
                       </p>
 
                       <p className="mt-1 text-xs text-blue-600">
-                        {
-                          mapBuildings.length
-                        }{" "}
-                        currently mapped
+                        {mapBuildings.length} currently mapped
                       </p>
 
                     </div>
@@ -1179,16 +1111,13 @@ export default function MapPage() {
                         </p>
 
                         <p className="mt-2 text-sm text-slate-500">
-                          Try changing your
-                          search or filters.
+                          Try changing your search or filters.
                         </p>
 
                       </div>
                     ) : (
                       filteredBuildings.map(
-                        (
-                          building
-                        ) => {
+                        (building) => {
                           const selected =
                             building.slug ===
                             selectedSlug;
@@ -1223,8 +1152,6 @@ export default function MapPage() {
 
                               <div className="flex gap-4">
 
-                                {/* IMAGE */}
-
                                 <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-100">
 
                                   <Image
@@ -1246,9 +1173,7 @@ export default function MapPage() {
                                   <div className="flex items-start justify-between gap-2">
 
                                     <p className="truncate font-bold text-slate-950">
-                                      {
-                                        building.name
-                                      }
+                                      {building.name}
                                     </p>
 
                                     {selected && (
@@ -1258,8 +1183,6 @@ export default function MapPage() {
                                     )}
 
                                   </div>
-
-                                  {/* LABELS */}
 
                                   <div className="mt-1 flex flex-wrap gap-1.5">
 
@@ -1286,9 +1209,7 @@ export default function MapPage() {
                                   </div>
 
                                   <p className="mt-2 truncate text-sm text-slate-500">
-                                    {
-                                      building.shortLocation
-                                    }
+                                    {building.shortLocation}
                                   </p>
 
                                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -1301,11 +1222,7 @@ export default function MapPage() {
                                           1
                                         )}{" "}
                                         <span className="font-normal text-slate-400">
-                                          (
-                                          {
-                                            building.reviewCount
-                                          }
-                                          )
+                                          ({building.reviewCount})
                                         </span>
                                       </span>
                                     ) : (
@@ -1315,17 +1232,14 @@ export default function MapPage() {
                                     )}
 
                                     <span className="text-slate-400">
-                                      {
-                                        building.distanceFromUTA
-                                      }
+                                      {building.distanceFromUTA}
                                     </span>
 
                                   </div>
 
                                   {!hasLocation && (
                                     <p className="mt-2 text-xs font-semibold text-orange-600">
-                                      Map location
-                                      not available
+                                      Map location not available
                                     </p>
                                   )}
 
@@ -1345,9 +1259,7 @@ export default function MapPage() {
 
               </aside>
 
-              {/* ==================================
-                  MAPBOX
-              ================================== */}
+              {/* MAP */}
 
               <div className="order-1 xl:order-2">
 
@@ -1369,24 +1281,16 @@ export default function MapPage() {
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
 
                   <p className="text-xs text-slate-500">
-                    Showing{" "}
-                    {
-                      mapBuildings.length
-                    }{" "}
-                    mapped properties from
-                    the current filters.
+                    Showing {mapBuildings.length} mapped properties from the current filters.
                   </p>
 
                   {userLocation ? (
                     <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700">
-                      ● Your location is
-                      available
+                      ● Your location is available
                     </span>
                   ) : (
                     <span className="text-xs text-slate-400">
-                      Enable location for
-                      directions from your
-                      current position
+                      Enable location for directions from your current position
                     </span>
                   )}
 
@@ -1397,9 +1301,7 @@ export default function MapPage() {
             </div>
           )}
 
-        {/* ============================================
-            SELECTED PROPERTY
-        ============================================ */}
+        {/* SELECTED PROPERTY */}
 
         {selectedBuilding &&
           !loading &&
@@ -1407,8 +1309,6 @@ export default function MapPage() {
             <section className="mt-7 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
 
               <div className="grid gap-6 p-6 lg:grid-cols-[190px_1fr_auto] lg:items-center">
-
-                {/* PROPERTY IMAGE */}
 
                 <div className="relative h-36 overflow-hidden rounded-2xl bg-slate-100">
 
@@ -1425,8 +1325,6 @@ export default function MapPage() {
                   />
 
                 </div>
-
-                {/* PROPERTY INFORMATION */}
 
                 <div>
 
@@ -1455,15 +1353,11 @@ export default function MapPage() {
                   </div>
 
                   <h2 className="mt-3 text-2xl font-extrabold text-slate-950">
-                    {
-                      selectedBuilding.name
-                    }
+                    {selectedBuilding.name}
                   </h2>
 
                   <p className="mt-2 text-slate-600">
-                    {
-                      selectedBuilding.address
-                    }
+                    {selectedBuilding.address}
                   </p>
 
                   <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
@@ -1479,9 +1373,7 @@ export default function MapPage() {
                         </span>
 
                         <span className="text-slate-500">
-                          {
-                            selectedBuilding.reviewCount
-                          }{" "}
+                          {selectedBuilding.reviewCount}{" "}
                           review
                           {selectedBuilding.reviewCount !==
                           1
@@ -1491,30 +1383,23 @@ export default function MapPage() {
                       </>
                     ) : (
                       <span className="font-medium text-slate-500">
-                        No student reviews
-                        yet
+                        No student reviews yet
                       </span>
                     )}
 
                     <span className="font-semibold text-blue-700">
-                      {
-                        selectedBuilding.distanceFromUTA
-                      }
+                      {selectedBuilding.distanceFromUTA}
                     </span>
 
                     <span className="font-bold text-slate-700">
-                      {
-                        selectedBuilding.priceLevel
-                      }
+                      {selectedBuilding.priceLevel}
                     </span>
 
                   </div>
 
                   {selectedBuilding.description && (
                     <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600">
-                      {
-                        selectedBuilding.description
-                      }
+                      {selectedBuilding.description}
                     </p>
                   )}
 
@@ -1523,14 +1408,11 @@ export default function MapPage() {
                   selectedBuilding.longitude !=
                     null ? (
                     <p className="mt-3 text-xs font-semibold text-green-700">
-                      ✓ Map location
-                      available
+                      ✓ Map location available
                     </p>
                   ) : (
                     <p className="mt-3 text-xs font-semibold text-orange-600">
-                      Map coordinates have
-                      not been added for
-                      this property yet.
+                      Map coordinates have not been added for this property yet.
                     </p>
                   )}
 
@@ -1573,17 +1455,13 @@ export default function MapPage() {
 
               </div>
 
-              {/* LOCATION STATUS */}
-
               {userLocation && (
                 <div className="border-t border-green-100 bg-green-50 px-6 py-4">
 
                   <p className="text-sm font-medium text-green-700">
-                    ✓ Your current
-                    location is ready.
-                    Get Directions will
-                    use your location as
-                    the starting point.
+                    ✓ Your current location is ready.
+                    Get Directions will use your location
+                    as the starting point.
                   </p>
 
                 </div>
@@ -1677,5 +1555,49 @@ function StatPill({
       </span>
 
     </div>
+  );
+}
+
+// =====================================================
+// MAP LOADING FALLBACK
+// =====================================================
+
+function MapLoading() {
+  return (
+    <main className="min-h-screen bg-slate-50 pt-24">
+
+      <section className="border-b border-slate-200 bg-white">
+
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
+
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-blue-700">
+            Explore Housing
+          </p>
+
+          <h1 className="mt-3 text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
+            UTA Housing Map
+          </h1>
+
+          <p className="mt-4 text-slate-500">
+            Loading housing map...
+          </p>
+
+        </div>
+
+      </section>
+
+      <section className="mx-auto max-w-[1500px] px-5 py-8 lg:px-8">
+
+        <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
+
+          <div className="h-[600px] animate-pulse rounded-3xl bg-slate-200" />
+
+          <div className="h-[600px] animate-pulse rounded-3xl bg-slate-200" />
+
+        </div>
+
+      </section>
+
+    </main>
   );
 }
