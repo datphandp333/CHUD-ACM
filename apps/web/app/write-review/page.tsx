@@ -1,570 +1,1176 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { utaHousing } from "@/app/data/utaHousing";
-import { supabase } from "@/app/lib/supabase";
-import type { HousingItem } from "@/app/lib/mapBuilding";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-type ReviewCategories = {
-  overall: number;
-  value: number;
-  safety: number;
-  noise: number;
-  maintenance: number;
-  management: number;
-  cleanliness: number;
-  amenities: number;
-  internet: number;
-  studyFriendly: number;
+import Image from "next/image";
+import Link from "next/link";
+
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+
+import type {
+  User,
+} from "@supabase/supabase-js";
+
+import {
+  supabase,
+} from "@/app/lib/supabase";
+
+import {
+  getUserDisplayName,
+} from "@/app/lib/auth";
+
+type Housing = {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  address: string;
+  shortLocation: string;
+  image: string;
 };
 
-type SavedReview = {
-  id: number;
-  user: string;
-  date: string;
-  comment: string;
-  likes: number;
-  dislikes: number;
-  apartmentId: string;
-  apartmentName: string;
-  pros: string;
-  cons: string;
-  wouldRecommend: boolean;
-  categories: ReviewCategories;
-};
-
-type SubmittedReviewApiRow = {
-  id?: number;
-  user_name?: string;
-  user?: string;
-  review_date?: string;
-  date?: string;
-  comment?: string;
-  likes?: number;
-  dislikes?: number;
-  housing_slug?: string;
-  apartmentId?: string;
-  housing_name?: string;
-  apartmentName?: string;
-  pros?: string;
-  cons?: string;
-  would_recommend?: boolean;
-  wouldRecommend?: boolean;
-  overall?: number;
-  value?: number;
-  safety?: number;
-  noise?: number;
-  maintenance?: number;
-  management?: number;
-  cleanliness?: number;
-  amenities?: number;
-  internet?: number;
-  study_friendly?: number;
-  categories?: Partial<ReviewCategories>;
-};
-
-function formatReviewDate(value: string) {
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
+function resolveImageSrc(
+  housing: Housing
+) {
+  if (
+    housing.image
+  ) {
+    return housing.image.startsWith(
+      "/"
+    )
+      ? housing.image
+      : `/${housing.image}`;
   }
 
-  return parsed.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getTodayFormatted() {
-  return new Date().toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function normalizeText(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function normalizeHousingItem(item: Record<string, unknown>): HousingItem {
-  const categoryValue =
-    item.category === "apartment" || item.category === "residence-hall"
-      ? item.category
-      : String(item.type ?? "").toLowerCase().includes("apartment")
-      ? "apartment"
-      : "residence-hall";
-
-  return {
-    id: String(item.slug ?? item.id ?? ""),
-    name: String(item.name ?? "Unknown Housing"),
-    category: categoryValue,
-    source: String(item.source ?? "Off Campus"),
-    address: String(item.address ?? "UTA area"),
-    shortLocation: String(
-      item.shortLocation ?? item.short_location ?? item.location ?? "Near UTA"
-    ),
-    description: String(item.description ?? "No description available."),
-    image: String(item.image ?? ""),
-    priceLevel: String(item.priceLevel ?? item.price_level ?? "$$"),
-    officialFeatures: Array.isArray(item.officialFeatures)
-      ? (item.officialFeatures as string[])
-      : Array.isArray(item.official_features)
-      ? (item.official_features as string[])
-      : [],
-    tags: Array.isArray(item.tags) ? (item.tags as string[]) : [],
-    officialUrl: String(item.officialUrl ?? item.official_url ?? ""),
-    rating: Number(item.rating ?? 0),
-    reviewCount: Number(item.reviewCount ?? item.review_count ?? 0),
-    distanceFromUTA: String(
-      item.distanceFromUTA ?? item.distance_from_uta ?? "Not listed"
-    ),
-  };
-}
-
-function mapSubmittedReview(item: SubmittedReviewApiRow): SavedReview {
-  const categories: ReviewCategories = {
-    overall: Number(item.overall ?? item.categories?.overall ?? 0),
-    value: Number(item.value ?? item.categories?.value ?? 0),
-    safety: Number(item.safety ?? item.categories?.safety ?? 0),
-    noise: Number(item.noise ?? item.categories?.noise ?? 0),
-    maintenance: Number(item.maintenance ?? item.categories?.maintenance ?? 0),
-    management: Number(item.management ?? item.categories?.management ?? 0),
-    cleanliness: Number(item.cleanliness ?? item.categories?.cleanliness ?? 0),
-    amenities: Number(item.amenities ?? item.categories?.amenities ?? 0),
-    internet: Number(item.internet ?? item.categories?.internet ?? 0),
-    studyFriendly: Number(
-      item.study_friendly ?? item.categories?.studyFriendly ?? 0
-    ),
-  };
-
-  return {
-    id: Number(item.id ?? Date.now()),
-    user: String(item.user_name ?? item.user ?? ""),
-    date: formatReviewDate(String(item.review_date ?? item.date ?? "")),
-    comment: String(item.comment ?? ""),
-    likes: Number(item.likes ?? 0),
-    dislikes: Number(item.dislikes ?? 0),
-    apartmentId: String(item.housing_slug ?? item.apartmentId ?? ""),
-    apartmentName: String(item.housing_name ?? item.apartmentName ?? ""),
-    pros: String(item.pros ?? ""),
-    cons: String(item.cons ?? ""),
-    wouldRecommend: Boolean(item.would_recommend ?? item.wouldRecommend),
-    categories,
-  };
-}
-
-function RatingSelect({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-medium text-slate-700">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-700 outline-none transition focus:border-blue-500"
-      >
-        <option value={5}>5 - Excellent</option>
-        <option value={4}>4 - Good</option>
-        <option value={3}>3 - Average</option>
-        <option value={2}>2 - Poor</option>
-        <option value={1}>1 - Very Bad</option>
-      </select>
-    </div>
-  );
+  return "/UTA-Logo.png";
 }
 
 export default function WriteReviewPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const idFromQuery = searchParams.get("id") || "";
-  const apartmentFromQuery = searchParams.get("apartment") || "";
+  const searchParams =
+    useSearchParams();
 
-  const getInitialHousingId = () => {
-    if (idFromQuery) {
-      const matchedById = utaHousing.find((item) => item.id === idFromQuery);
-      if (matchedById) return matchedById.id;
-    }
-    if (apartmentFromQuery) {
-      const matchedByName = utaHousing.find(
-        (item) => item.name.toLowerCase() === apartmentFromQuery.toLowerCase()
-      );
-      if (matchedByName) return matchedByName.id;
-    }
-    return utaHousing[0]?.id ?? "";
-  };
+  const initialSlug =
+    searchParams.get(
+      "housing"
+    ) ??
+    searchParams.get(
+      "id"
+    ) ??
+    "";
 
-  const [name, setName] = useState("");
-  const [housingId, setHousingId] = useState("");
-  const [comment, setComment] = useState("");
-  const [pros, setPros] = useState("");
-  const [cons, setCons] = useState("");
-  const [wouldRecommend, setWouldRecommend] = useState(true);
+  const [
+    user,
+    setUser,
+  ] =
+    useState<User | null>(
+      null
+    );
 
-  const [overall, setOverall] = useState(5);
-  const [value, setValue] = useState(5);
-  const [safety, setSafety] = useState(5);
-  const [noise, setNoise] = useState(5);
-  const [maintenance, setMaintenance] = useState(5);
-  const [management, setManagement] = useState(5);
-  const [cleanliness, setCleanliness] = useState(5);
-  const [amenities, setAmenities] = useState(5);
-  const [internet, setInternet] = useState(5);
-  const [studyFriendly, setStudyFriendly] = useState(5);
+  const [
+    authLoading,
+    setAuthLoading,
+  ] =
+    useState(true);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
-  const [submittedReview, setSubmittedReview] = useState<SavedReview | null>(null);
-  const [loadingHousing, setLoadingHousing] = useState(false);
-  const [housingLoadError, setHousingLoadError] = useState("");
-  const [housingOptions, setHousingOptions] = useState<HousingItem[]>([]);
+  const [
+    housing,
+    setHousing,
+  ] =
+    useState<
+      Housing[]
+    >([]);
 
-  // Auth check — redirect to login if not logged in
+  const [
+    housingLoading,
+    setHousingLoading,
+  ] =
+    useState(true);
+
+  const [
+    selectedSlug,
+    setSelectedSlug,
+  ] =
+    useState(
+      initialSlug
+    );
+
+  const [
+    overall,
+    setOverall,
+  ] =
+    useState(5);
+
+  const [
+    noise,
+    setNoise,
+  ] =
+    useState(5);
+
+  const [
+    cleanliness,
+    setCleanliness,
+  ] =
+    useState(5);
+
+  const [
+    amenities,
+    setAmenities,
+  ] =
+    useState(5);
+
+  const [
+    comment,
+    setComment,
+  ] =
+    useState("");
+
+  const [
+    pros,
+    setPros,
+  ] =
+    useState("");
+
+  const [
+    cons,
+    setCons,
+  ] =
+    useState("");
+
+  const [
+    wouldRecommend,
+    setWouldRecommend,
+  ] =
+    useState(true);
+
+  const [
+    submitting,
+    setSubmitting,
+  ] =
+    useState(false);
+
+  const [
+    error,
+    setError,
+  ] =
+    useState("");
+
+  const [
+    success,
+    setSuccess,
+  ] =
+    useState("");
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.push("/login?redirect=/write-review");
+    let mounted =
+      true;
+
+    async function loadUser() {
+      const {
+        data: {
+          user,
+        },
+      } =
+        await supabase.auth.getUser();
+
+      if (!mounted) {
+        return;
       }
-    });
-  }, [router]);
+
+      if (!user) {
+        const destination =
+          initialSlug
+            ? `/write-review?id=${initialSlug}`
+            : "/write-review";
+
+        router.replace(
+          `/login?redirect=${encodeURIComponent(
+            destination
+          )}`
+        );
+
+        return;
+      }
+
+      setUser(user);
+      setAuthLoading(false);
+    }
+
+    loadUser();
+
+    const {
+      data: {
+        subscription,
+      },
+    } =
+      supabase.auth.onAuthStateChange(
+        (
+          _event,
+          session
+        ) => {
+          if (
+            !session?.user
+          ) {
+            router.replace(
+              "/login?redirect=/write-review"
+            );
+
+            return;
+          }
+
+          setUser(
+            session.user
+          );
+
+          setAuthLoading(
+            false
+          );
+        }
+      );
+
+    return () => {
+      mounted = false;
+
+      subscription.unsubscribe();
+    };
+  }, [
+    router,
+    initialSlug,
+  ]);
 
   useEffect(() => {
     async function loadHousing() {
       try {
-        setLoadingHousing(true);
-        setHousingLoadError("");
+        setHousingLoading(
+          true
+        );
 
-        const response = await fetch("/api/browse-housing", {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to load housing options.");
-        }
-
-        const data = (await response.json()) as Record<string, unknown>[];
-        const mapped = data.map(normalizeHousingItem);
-
-        setHousingOptions(mapped);
-
-        if (idFromQuery) {
-          const matchedById = mapped.find((item) => item.id === idFromQuery);
-          if (matchedById) {
-            setHousingId(matchedById.id);
-            return;
-          }
-        }
-
-        if (apartmentFromQuery) {
-          const normalizedApartment = normalizeText(apartmentFromQuery);
-
-          const matchedByName = mapped.find(
-            (item) => normalizeText(item.name) === normalizedApartment
+        const response =
+          await fetch(
+            "/api/browse-housing",
+            {
+              cache:
+                "no-store",
+            }
           );
 
-          if (matchedByName) {
-            setHousingId(matchedByName.id);
-            return;
-          }
+        const result =
+          await response.json();
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            result?.error ||
+              "Unable to load housing."
+          );
         }
 
-        if (mapped.length > 0) {
-          setHousingId(mapped[0].id);
+        const normalized: Housing[] =
+          Array.isArray(
+            result
+          )
+            ? result.map(
+                (
+                  item
+                ) => ({
+                  id:
+                    String(
+                      item.id ??
+                        ""
+                    ),
+
+                  slug:
+                    String(
+                      item.id ??
+                        item.slug ??
+                        ""
+                    ),
+
+                  name:
+                    String(
+                      item.name ??
+                        "Unknown Housing"
+                    ),
+
+                  category:
+                    String(
+                      item.category ??
+                        ""
+                    ),
+
+                  address:
+                    String(
+                      item.address ??
+                        ""
+                    ),
+
+                  shortLocation:
+                    String(
+                      item.shortLocation ??
+                        item.short_location ??
+                        "Near UTA"
+                    ),
+
+                  image:
+                    String(
+                      item.image ??
+                        ""
+                    ),
+                })
+              )
+            : [];
+
+        setHousing(
+          normalized
+        );
+
+        if (
+          initialSlug &&
+          normalized.some(
+            (
+              item
+            ) =>
+              item.slug ===
+              initialSlug
+          )
+        ) {
+          setSelectedSlug(
+            initialSlug
+          );
+        } else if (
+          normalized.length >
+            0 &&
+          !selectedSlug
+        ) {
+          setSelectedSlug(
+            normalized[0].slug
+          );
         }
-      } catch (err) {
-        console.error("WriteReviewPage load error:", err);
-        setHousingOptions([]);
-        setHousingLoadError("Could not load housing options right now.");
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load housing."
+        );
       } finally {
-        setLoadingHousing(false);
+        setHousingLoading(
+          false
+        );
       }
     }
 
     loadHousing();
-  }, [idFromQuery, apartmentFromQuery]);
+  }, [
+    initialSlug,
+    selectedSlug,
+  ]);
 
-  const selectedHousing = useMemo(() => {
-    return housingOptions.find((item) => item.id === housingId) ?? null;
-  }, [housingOptions, housingId]);
+  const selectedHousing =
+    useMemo(
+      () =>
+        housing.find(
+          (
+            property
+          ) =>
+            property.slug ===
+            selectedSlug
+        ) ??
+        null,
+      [
+        housing,
+        selectedSlug,
+      ]
+    );
 
-  const averageScore = useMemo(() => {
-    const values = [overall, value, safety, noise, maintenance, management, cleanliness, amenities, internet, studyFriendly];
-    return values.reduce((sum, item) => sum + item, 0) / values.length;
-  }, [overall, value, safety, noise, maintenance, management, cleanliness, amenities, internet, studyFriendly]);
+  const reviewerName =
+    useMemo(() => {
+      if (!user) {
+        return "";
+      }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setSubmitting(true);
+      const fullName =
+        typeof user.user_metadata
+          ?.full_name ===
+        "string"
+          ? user.user_metadata.full_name
+          : null;
 
-    if (!name.trim() || !comment.trim()) {
-      setError("Please fill out your name and main review comment.");
-      setSubmitted(false);
-      setSubmitting(false);
-      return;
-    }
+      return getUserDisplayName(
+        fullName,
+        user.email
+      );
+    }, [
+      user,
+    ]);
 
-    if (!selectedHousing) {
-      setError("Please choose a housing option.");
-      setSubmitted(false);
-      setSubmitting(false);
-      return;
-    }
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
 
-    // Look up Supabase building UUID by name and insert review
-    const { data: buildingData } = await supabase
-      .from("buildings")
-      .select("id")
-      .eq("name", selectedHousing.name)
-      .single();
-
-    if (buildingData) {
-      await supabase.from("ratingauth").insert([{
-        listing_id: buildingData.id,
-        reviewer_name: name.trim(),
-        score: overall,
-        comment: comment.trim(),
-      }]);
-
-      await supabase.from("ratings").insert([{
-        building_id: buildingData.id,
-        reviewer_name: name.trim(),
-        cleanliness,
-        noise,
-        entertainment: amenities,
-        overall,
-      }]);
-    }
-
-    // Post to reviews table so it shows on the detail page
-    await fetch("/api/reviews", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        housingSlug: selectedHousing.id,
-        housingName: selectedHousing.name,
-        userName: name.trim(),
-        comment: comment.trim(),
-        pros: pros.trim(),
-        cons: cons.trim(),
-        wouldRecommend,
-        categories: { overall, noise, cleanliness, amenities },
-      }),
-    });
-
-    // Save to localStorage for local display
-    const storageKey = `reviews-${selectedHousing.id}`;
-    const existingReviews = JSON.parse(localStorage.getItem(storageKey) ?? "[]") as SavedReview[];
-
-    const newReview: SavedReview = {
-      id: Date.now(),
-      user: name.trim(),
-      date: getTodayFormatted(),
-      comment: comment.trim(),
-      likes: 0,
-      dislikes: 0,
-      apartmentId: selectedHousing.id,
-      apartmentName: selectedHousing.name,
-      pros: pros.trim(),
-      cons: cons.trim(),
-      wouldRecommend,
-      categories: { overall, value, safety, noise, maintenance, management, cleanliness, amenities, internet, studyFriendly },
-    };
-
-    localStorage.setItem(storageKey, JSON.stringify([newReview, ...existingReviews]));
-
-    setSubmittedReview(newReview);
-    setSubmitted(true);
     setError("");
-    setSubmitting(false);
-    setName("");
-    setComment("");
-    setPros("");
-    setCons("");
-    setWouldRecommend(true);
-    setOverall(5); setValue(5); setSafety(5); setNoise(5);
-    setMaintenance(5); setManagement(5); setCleanliness(5);
-    setAmenities(5); setInternet(5); setStudyFriendly(5);
-  };
+    setSuccess("");
+
+    if (
+      !selectedHousing
+    ) {
+      setError(
+        "Please choose a housing property."
+      );
+
+      return;
+    }
+
+    if (
+      comment.trim().length <
+      10
+    ) {
+      setError(
+        "Please write at least 10 characters about your experience."
+      );
+
+      return;
+    }
+
+    setSubmitting(
+      true
+    );
+
+    try {
+      const {
+        data: {
+          session,
+        },
+      } =
+        await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error(
+          "Your session expired. Please log in again."
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/reviews",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+
+            body:
+              JSON.stringify(
+                {
+                  housingSlug:
+                    selectedHousing.slug,
+
+                  housingName:
+                    selectedHousing.name,
+
+                  overall,
+
+                  noise,
+
+                  cleanliness,
+
+                  amenities,
+
+                  comment:
+                    comment.trim(),
+
+                  pros:
+                    pros.trim(),
+
+                  cons:
+                    cons.trim(),
+
+                  wouldRecommend,
+                }
+              ),
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          result?.details ||
+            result?.error ||
+            "Unable to submit your review."
+        );
+      }
+
+      setSuccess(
+        "Your review has been published!"
+      );
+
+      setTimeout(
+        () => {
+          router.push(
+            `/housing/${selectedHousing.slug}`
+          );
+        },
+        1000
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit your review."
+      );
+    } finally {
+      setSubmitting(
+        false
+      );
+    }
+  }
+
+  if (
+    authLoading
+  ) {
+    return (
+      <main className="min-h-screen bg-slate-50 pt-28">
+
+        <div className="mx-auto max-w-6xl px-6 py-20 text-center">
+
+          <p className="text-slate-500">
+            Checking your account...
+          </p>
+
+        </div>
+
+      </main>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
-    <main className="min-h-screen bg-slate-50 pt-28">
-      <section className="mx-auto max-w-4xl px-6 pb-14">
-        <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm md:p-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-700">
-            Write a Review
+    <main className="min-h-screen bg-[#f8fafc] pt-20">
+
+      {/* HEADER */}
+      <section className="border-b border-slate-200 bg-white">
+
+        <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
+
+          <Link
+            href={
+              selectedHousing
+                ? `/housing/${selectedHousing.slug}`
+                : "/browse-housing"
+            }
+            className="text-sm font-bold text-blue-700 hover:underline"
+          >
+            ← Back to housing
+          </Link>
+
+          <p className="mt-7 text-sm font-bold uppercase tracking-[0.18em] text-blue-700">
+            Student Review
           </p>
 
-          <h1 className="mt-2 text-3xl font-bold text-blue-900 md:text-5xl">
-            Share your housing experience
+          <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
+            Share your experience
           </h1>
 
-          <p className="mt-3 text-slate-600">
-            Leave a detailed review so other students can compare housing choices more accurately.
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600">
+            Your feedback can help another UTA student understand what living
+            here is actually like.
           </p>
 
-          {submitted && submittedReview && (
-            <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              Your review for{" "}
-              <span className="font-semibold">
-                {submittedReview.apartmentName}
-              </span>{" "}
-              was submitted successfully.
-            </div>
-          )}
+        </div>
 
-          {housingLoadError && (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {housingLoadError}
-            </div>
-          )}
+      </section>
+
+      <section className="mx-auto grid max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1fr_350px] lg:px-8">
+
+        {/* FORM */}
+        <form
+          onSubmit={
+            handleSubmit
+          }
+          className="space-y-8"
+        >
 
           {error && (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-8">
-            <div>
-              <label
-                htmlFor="reviewerName"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Your Name
-              </label>
-              <input
-                id="reviewerName"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-700 outline-none transition focus:border-blue-500"
-              />
+          {success && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
+              ✓ {success}
             </div>
+          )}
 
-            <div>
-              <label htmlFor="housing" className="mb-2 block text-sm font-medium text-slate-700">
-                Housing Option
-              </label>
-              <select
-                id="housing"
-                value={housingId}
-                onChange={(e) => setHousingId(e.target.value)}
-                disabled={loadingHousing || housingOptions.length === 0}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-700 outline-none transition focus:border-blue-500 disabled:bg-slate-100"
-              >
-                {loadingHousing ? (
-                  <option value="">Loading housing options...</option>
-                ) : housingOptions.length === 0 ? (
-                  <option value="">No housing options available</option>
-                ) : (
-                  housingOptions.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
+          {/* PROPERTY */}
+          <FormCard
+            number="1"
+            title="Choose the property"
+            description="Tell us which housing option you are reviewing."
+          >
 
-            <div className="rounded-3xl bg-slate-50 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-bold text-blue-900">Category Ratings</h2>
-                <div className="rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-700">
-                  Current Average: {averageScore.toFixed(1)} / 5
-                </div>
+            <select
+              value={
+                selectedSlug
+              }
+              onChange={(
+                event
+              ) =>
+                setSelectedSlug(
+                  event.target.value
+                )
+              }
+              disabled={
+                housingLoading
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-4 font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            >
+
+              <option value="">
+                Select housing
+              </option>
+
+              {housing.map(
+                (
+                  property
+                ) => (
+                  <option
+                    key={
+                      property.slug
+                    }
+                    value={
+                      property.slug
+                    }
+                  >
+                    {
+                      property.name
+                    }
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </FormCard>
+
+          {/* RATINGS */}
+          <FormCard
+            number="2"
+            title="Rate your experience"
+            description="Give other students a quick picture of what living here was like."
+          >
+
+            <RatingRow
+              title="Overall"
+              subtitle="Your overall housing experience"
+              value={
+                overall
+              }
+              onChange={
+                setOverall
+              }
+            />
+
+            <RatingRow
+              title="Cleanliness"
+              subtitle="Condition of rooms and common areas"
+              value={
+                cleanliness
+              }
+              onChange={
+                setCleanliness
+              }
+            />
+
+            <RatingRow
+              title="Noise"
+              subtitle="Your experience with noise levels"
+              value={
+                noise
+              }
+              onChange={
+                setNoise
+              }
+            />
+
+            <RatingRow
+              title="Amenities"
+              subtitle="Quality and usefulness of amenities"
+              value={
+                amenities
+              }
+              onChange={
+                setAmenities
+              }
+            />
+
+          </FormCard>
+
+          {/* REVIEW */}
+          <FormCard
+            number="3"
+            title="Tell students what it was like"
+            description="Specific and balanced reviews are usually the most helpful."
+          >
+
+            <textarea
+              value={
+                comment
+              }
+              onChange={(
+                event
+              ) =>
+                setComment(
+                  event.target.value
+                )
+              }
+              rows={
+                7
+              }
+              maxLength={
+                3000
+              }
+              placeholder="What was your experience with the location, management, maintenance, parking, roommates, safety, or overall atmosphere?"
+              className="w-full resize-none rounded-xl border border-slate-300 px-4 py-4 leading-7 text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+            />
+
+            <p className="mt-2 text-right text-xs text-slate-400">
+              {comment.length}/3000
+            </p>
+
+          </FormCard>
+
+          {/* PROS / CONS */}
+          <FormCard
+            number="4"
+            title="What stood out?"
+            description="Highlight the best parts and anything students should know beforehand."
+          >
+
+            <div className="grid gap-5 md:grid-cols-2">
+
+              <div>
+
+                <label className="font-bold text-emerald-700">
+                  Pros
+                </label>
+
+                <textarea
+                  value={
+                    pros
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setPros(
+                      event.target.value
+                    )
+                  }
+                  rows={
+                    4
+                  }
+                  placeholder="Close to campus, good amenities..."
+                  className="mt-3 w-full resize-none rounded-xl border border-emerald-200 bg-emerald-50/40 px-4 py-4 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                />
+
               </div>
 
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <RatingSelect id="overall" label="Overall Rating" value={overall} onChange={setOverall} />
-                <RatingSelect id="noise" label="Noise Level" value={noise} onChange={setNoise} />
-                <RatingSelect id="cleanliness" label="Cleanliness" value={cleanliness} onChange={setCleanliness} />
-                <RatingSelect id="entertainment" label="Entertainment" value={amenities} onChange={setAmenities} />
+              <div>
+
+                <label className="font-bold text-red-700">
+                  Cons
+                </label>
+
+                <textarea
+                  value={
+                    cons
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setCons(
+                      event.target.value
+                    )
+                  }
+                  rows={
+                    4
+                  }
+                  placeholder="Parking, weekend noise..."
+                  className="mt-3 w-full resize-none rounded-xl border border-red-200 bg-red-50/40 px-4 py-4 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
+
               </div>
+
             </div>
 
-            <div>
-              <label htmlFor="comment" className="mb-2 block text-sm font-medium text-slate-700">
-                Full Review
-              </label>
-              <textarea
-                id="comment"
-                rows={6}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Write your overall thoughts about this housing option..."
-                className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-700 outline-none transition focus:border-blue-500"
-              />
+          </FormCard>
+
+          {/* RECOMMEND */}
+          <FormCard
+            number="5"
+            title="Would you recommend it?"
+            description="Would you tell another UTA student to consider living here?"
+          >
+
+            <div className="grid gap-3 sm:grid-cols-2">
+
+              <button
+                type="button"
+                onClick={() =>
+                  setWouldRecommend(
+                    true
+                  )
+                }
+                className={`rounded-2xl border p-5 text-left transition ${
+                  wouldRecommend
+                    ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+                    : "border-slate-200 bg-white hover:border-blue-200"
+                }`}
+              >
+
+                <p className="text-xl">
+                  👍
+                </p>
+
+                <p className="mt-3 font-extrabold text-slate-950">
+                  Yes, I would
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  I would recommend this property.
+                </p>
+
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setWouldRecommend(
+                    false
+                  )
+                }
+                className={`rounded-2xl border p-5 text-left transition ${
+                  !wouldRecommend
+                    ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100"
+                    : "border-slate-200 bg-white hover:border-blue-200"
+                }`}
+              >
+
+                <p className="text-xl">
+                  👎
+                </p>
+
+                <p className="mt-3 font-extrabold text-slate-950">
+                  Probably not
+                </p>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  I would choose another option.
+                </p>
+
+              </button>
+
             </div>
+
+          </FormCard>
+
+          {/* SUBMIT */}
+          <div className="flex flex-col gap-3 sm:flex-row">
 
             <button
               type="submit"
-              disabled={submitting || loadingHousing || !selectedHousing}
-              className="inline-flex rounded-full bg-blue-600 px-6 py-3 font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              disabled={
+                submitting ||
+                !selectedHousing
+              }
+              className="rounded-xl bg-blue-700 px-8 py-4 font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit Review"}
+              {submitting
+                ? "Publishing review..."
+                : "Publish Review"}
             </button>
-          </form>
-        </div>
 
-        {submittedReview && (
-          <div className="mt-8 rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm md:p-10">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-700">
-              Submitted Review Preview
-            </p>
+            {selectedHousing && (
+              <Link
+                href={`/housing/${selectedHousing.slug}`}
+                className="rounded-xl border border-slate-300 bg-white px-8 py-4 text-center font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </Link>
+            )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-blue-900">
-                  {submittedReview.apartmentName}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {submittedReview.date}
-                </p>
+          </div>
+
+        </form>
+
+        {/* SIDEBAR */}
+        <aside>
+
+          <div className="sticky top-28 space-y-5">
+
+            {selectedHousing && (
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+
+                <div className="relative h-44">
+
+                  <Image
+                    src={resolveImageSrc(
+                      selectedHousing
+                    )}
+                    alt={
+                      selectedHousing.name
+                    }
+                    fill
+                    className="object-cover"
+                    sizes="350px"
+                  />
+
+                </div>
+
+                <div className="p-5">
+
+                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
+                    Reviewing
+                  </p>
+
+                  <h2 className="mt-2 text-xl font-extrabold text-slate-950">
+                    {selectedHousing.name}
+                  </h2>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    {selectedHousing.address}
+                  </p>
+
+                </div>
+
               </div>
-              <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">
-                Avg {((Object.values(submittedReview.categories) as number[]).reduce((sum, v) => sum + v, 0) / Object.values(submittedReview.categories).length).toFixed(1)} / 5
+            )}
+
+            {/* USER */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                Posting as
+              </p>
+
+              <div className="mt-4 flex items-center gap-4">
+
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-700 text-lg font-extrabold text-white">
+                  {reviewerName
+                    .charAt(
+                      0
+                    )
+                    .toUpperCase()}
+                </div>
+
+                <div className="min-w-0">
+
+                  <p className="truncate font-extrabold text-slate-950">
+                    {reviewerName}
+                  </p>
+
+                  {user.email &&
+                    reviewerName !==
+                      user.email && (
+                      <p className="mt-1 truncate text-sm text-slate-500">
+                        {user.email}
+                      </p>
+                    )}
+
+                </div>
+
               </div>
+
             </div>
 
-            <p className="mt-4 font-semibold text-slate-800">{submittedReview.user}</p>
-            <p className="mt-3 text-sm text-slate-500">
-              Would Recommend: {submittedReview.wouldRecommend ? "Yes" : "No"}
-            </p>
+            {/* TIPS */}
+            <div className="rounded-3xl bg-slate-950 p-6 text-white">
 
-            {submittedReview.pros && (
-              <p className="mt-4 text-slate-700">
-                <span className="font-semibold">Pros:</span> {submittedReview.pros}
+              <p className="text-lg font-extrabold">
+                Write a helpful review
               </p>
-            )}
 
-            {submittedReview.cons && (
-              <p className="mt-2 text-slate-700">
-                <span className="font-semibold">Cons:</span> {submittedReview.cons}
-              </p>
-            )}
+              <div className="mt-5 space-y-4 text-sm leading-6 text-slate-300">
 
-            <p className="mt-4 leading-8 text-slate-600">{submittedReview.comment}</p>
+                <Tip>
+                  Be specific about your actual experience.
+                </Tip>
+
+                <Tip>
+                  Include both positives and negatives.
+                </Tip>
+
+                <Tip>
+                  Avoid personal information about roommates or staff.
+                </Tip>
+
+                <Tip>
+                  Focus on facts another student would find useful.
+                </Tip>
+
+              </div>
+
+            </div>
+
           </div>
-        )}
+
+        </aside>
+
       </section>
+
     </main>
+  );
+}
+
+function FormCard({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+
+      <div className="flex gap-4">
+
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-700 font-extrabold text-white">
+          {number}
+        </div>
+
+        <div>
+
+          <h2 className="text-xl font-extrabold text-slate-950">
+            {title}
+          </h2>
+
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            {description}
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="mt-6">
+        {children}
+      </div>
+
+    </section>
+  );
+}
+
+function RatingRow({
+  title,
+  subtitle,
+  value,
+  onChange,
+}: {
+  title: string;
+  subtitle: string;
+  value: number;
+  onChange: (
+    value: number
+  ) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 border-b border-slate-100 py-5 first:pt-0 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+
+      <div>
+
+        <p className="font-extrabold text-slate-900">
+          {title}
+        </p>
+
+        <p className="mt-1 text-sm text-slate-500">
+          {subtitle}
+        </p>
+
+      </div>
+
+      <div className="flex gap-2">
+
+        {[1, 2, 3, 4, 5].map(
+          (
+            rating
+          ) => (
+            <button
+              key={
+                rating
+              }
+              type="button"
+              onClick={() =>
+                onChange(
+                  rating
+                )
+              }
+              aria-label={`${rating} stars`}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl transition ${
+                rating <=
+                value
+                  ? "bg-amber-100 text-amber-500"
+                  : "bg-slate-100 text-slate-300 hover:bg-slate-200"
+              }`}
+            >
+              ★
+            </button>
+          )
+        )}
+
+      </div>
+
+    </div>
+  );
+}
+
+function Tip({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3">
+
+      <span className="font-bold text-blue-300">
+        ✓
+      </span>
+
+      <p>
+        {children}
+      </p>
+
+    </div>
   );
 }

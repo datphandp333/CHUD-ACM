@@ -7,10 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed:housing": "node scripts/seedHousing.mjs"
+    "seed:housing": "node scripts/seedHousing.mjs",
+    "geocode:housing": "node scripts/geocodeHousing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
+    "lucide-react": "^1.44.0",
+    "mapbox-gl": "^3.30.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
